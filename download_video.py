@@ -1,4 +1,4 @@
-mimport yt_dlp
+import yt_dlp
 from pydub import AudioSegment
 import os
 import logging
