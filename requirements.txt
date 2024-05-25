@@ -1,3 +1,4 @@
+groq
 pyannote.audio
 python-dotenv
 pydub

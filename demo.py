@@ -5,6 +5,8 @@ import torch
 import os
 import logging
 import time
+from download_video import download_video
+from transcribe_video import groq_transcribe_audio
 
 logging.basicConfig(level=logging.INFO)
 
@@ -82,10 +84,30 @@ def save_speaker_segments(diarization_results, audio_file_path):
 
     return speaker_segments
 
+def transcribe_speaker_segments(speaker_segments):
+    transcribed_segments = []
+    for speaker_label, file_path in speaker_segments:
+        transcribed_text = groq_transcribe_audio(file_path)
+        transcribed_segments.append({
+            "speaker": speaker_label,
+            "text": transcribed_text
+        })
+    return transcribed_segments
+
+def create_transcript(transcribed_segments):
+    transcript = ""
+    for segment in transcribed_segments:
+        transcript += f"{segment['speaker']}: {segment['text']}\n\n"
+    return transcript
+
+
 if __name__ == "__main__":
     audio_file_path = "Former OPD Chief LeRonne Armstrong announces city council run.mp3"
     # diarization_results = diarize_audio(audio_file_path)
     # print(diarization_results)
     diarization_results=[(0.03096875, 12.68721875, 'SPEAKER_01'), (15.42096875, 24.567218750000002, 'SPEAKER_02'), (26.305343750000002, 40.49721875, 'SPEAKER_02'), (40.80096875, 50.84159375, 'SPEAKER_00'), (50.84159375, 70.72034375, 'SPEAKER_02'), (70.92284375, 86.44784375, 'SPEAKER_00'), (86.44784375, 100.69034375000001, 'SPEAKER_02'), (103.60971875000001, 113.26221875, 'SPEAKER_02'), (113.38034375000001, 114.40971875000001, 'SPEAKER_01')]
     segments = save_speaker_segments(diarization_results, audio_file_path)
-    print(segments)
+    transcribed_segments = transcribe_speaker_segments(segments)
+    transcript = create_transcript(transcribed_segments)
+    print(transcript)
+
