@@ -1,27 +1,91 @@
 from pyannote.audio import Pipeline
+from pydub import AudioSegment
 from dotenv import load_dotenv
 import torch
 import os
+import logging
+import time
+
+logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 # Need to accept the pyannote terms of service on Hugging Face website
 HUGGINGFACE_ACCESS_TOKEN = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
 
-pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-3.1",
-    use_auth_token=HUGGINGFACE_ACCESS_TOKEN)
+def diarize_audio(audio_file_path: str) -> list:
+    # Record the start time
+    start_time = time.time()  
 
-# Check if pipeline is successfully created
-if pipeline is None:
-    raise ValueError("Failed to load the pipeline. Check your Hugging Face access token.")
+    pipeline = Pipeline.from_pretrained(
+        "pyannote/speaker-diarization-3.1",
+        use_auth_token=HUGGINGFACE_ACCESS_TOKEN)
 
-# send pipeline to GPU if CUDA is available
-if torch.cuda.is_available():
-    pipeline.to(torch.device("cuda"))
+    # Check if pipeline is successfully created
+    if pipeline is None:
+        raise ValueError("Failed to load the pipeline. Check your Hugging Face access token.")
 
-# apply pretrained pipeline
-diarization = pipeline("Former OPD Chief LeRonne Armstrong announces city council run.mp3")
+    # send pipeline to GPU if CUDA is available
+    if torch.cuda.is_available():
+        pipeline.to(torch.device("cuda"))
 
-# print the result
-for turn, _, speaker in diarization.itertracks(yield_label=True):
-    print(f"start={turn.start:.1f}s stop={turn.end:.1f}s speaker_{speaker}")
+    # Apply pretrained pipeline
+    diarization = pipeline("Former OPD Chief LeRonne Armstrong announces city council run.mp3")
+
+    # Assuming diarization_results is a list of tuples with turn.start and turn.end as floats
+    diarization_results = [(turn.start, turn.end, speaker) for turn, _, speaker in diarization.itertracks(yield_label=True)]
+    
+    # Record the end time and log the elapsed time
+    end_time = time.time()  
+    elapsed_time = end_time - start_time
+    logging.info(f"Elapsed time: {elapsed_time} seconds")
+
+    return diarization_results
+
+def save_speaker_segments(diarization_results, audio_file_path):
+    # Load your audio file
+    audio_file = AudioSegment.from_file(audio_file_path)
+    
+    # Get the base name of the audio file
+    audio_file_base_name = os.path.basename(audio_file_path)
+
+    # Create speaker_segments directory in the current directory and set file path to it
+    if not os.path.exists("speaker_segments"):
+        os.makedirs("speaker_segments")
+    speaker_segments_dir = os.path.join(os.getcwd(), "speaker_segments")
+
+    # Initialize speaker_segments list
+    speaker_segments = []
+
+    # Initialize counter
+    counter = 1
+
+    # Process each diarization result
+    for start_time, end_time, speaker_label in diarization_results:
+        start_time_str = str(start_time)
+        end_time_str = str(end_time)
+        
+        start_ms = int(float(start_time_str[:-1]) * 1000)  # Convert start time to milliseconds
+        end_ms = int(float(end_time_str[:-1]) * 1000)  # Convert end time to milliseconds
+        
+        # Extract the segment corresponding to the speaker
+        speaker_segment = audio_file[start_ms:end_ms]
+        
+        # Save the speaker segment to the speaker_segments directory
+        file_path = os.path.join(speaker_segments_dir, f"{counter}_{speaker_label}_{audio_file_base_name}")
+        speaker_segment.export(file_path, format="mp3")
+        logging.debug(f"Exported speaker segment {counter} to {file_path}")
+
+        speaker_segments.append([speaker_label, file_path])
+        
+        # Increment counter
+        counter += 1
+
+    return speaker_segments
+
+if __name__ == "__main__":
+    audio_file_path = "Former OPD Chief LeRonne Armstrong announces city council run.mp3"
+    # diarization_results = diarize_audio(audio_file_path)
+    # print(diarization_results)
+    diarization_results=[(0.03096875, 12.68721875, 'SPEAKER_01'), (15.42096875, 24.567218750000002, 'SPEAKER_02'), (26.305343750000002, 40.49721875, 'SPEAKER_02'), (40.80096875, 50.84159375, 'SPEAKER_00'), (50.84159375, 70.72034375, 'SPEAKER_02'), (70.92284375, 86.44784375, 'SPEAKER_00'), (86.44784375, 100.69034375000001, 'SPEAKER_02'), (103.60971875000001, 113.26221875, 'SPEAKER_02'), (113.38034375000001, 114.40971875000001, 'SPEAKER_01')]
+    segments = save_speaker_segments(diarization_results, audio_file_path)
+    print(segments)
