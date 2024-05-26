@@ -8,7 +8,7 @@ import time
 from download_video import yt_dlp_download
 from transcribe_video import groq_transcribe_audio
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 load_dotenv()
 # Need to accept the pyannote terms of service on Hugging Face website
@@ -113,30 +113,41 @@ def save_speaker_segments(diarization_results: list, audio_file_path: str) -> li
     return speaker_segments
 
 def transcribe_speaker_segments(speaker_segments: list) -> list:
-    
     transcribed_segments = []
     for speaker_label, file_path in speaker_segments:
-        retry_count = 0
-        max_retries = 6
-        while retry_count < max_retries:
-            try:
-                transcribed_text = groq_transcribe_audio(file_path)
+        try:
+            transcribed_text = groq_transcribe_audio(file_path)
+            if transcribed_text is not None:
                 transcribed_segments.append({
                     "speaker": speaker_label,
                     "text": transcribed_text
                 })
-                break
+            else:
+                logging.error(f"Failed to transcribe speaker segment: {file_path}")
+            try:
+                os.remove(file_path)
             except Exception as e:
-                if "429" in str(e) or "429" in str(e.__cause__):
-                    logging.info(f"Received 429 response, waiting 10 seconds before retrying... (Attempt {retry_count + 1}/{max_retries})")
-                    time.sleep(10)
-                    retry_count += 1
-                else:
-                    logging.error(f"An unexpected error occurred: {e}")
-                    break
-        else:
-            logging.error(f"Failed to transcribe speaker segment after {max_retries} retries.")
-        time.sleep(3)
+                logging.error(f"Failed to remove speaker segment: {file_path}. Error: {e}")
+        except FileNotFoundError:
+            logging.error(f"Audio file not found: {file_path}")
+        except PermissionError:
+            logging.error(f"Permission denied for accessing the file: {file_path}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                logging.error(f"Too many requests: unable to transcribe due to rate limits on {file_path}")
+            else:
+                logging.error(f"HTTP error occurred while transcribing {file_path}: Status code {e.response.status_code}")
+        except httpx.RequestError as e:
+            logging.error(f"Request error occurred while transcribing {file_path}: {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while transcribing {file_path}: {e}")
+            # Optionally, re-raise the exception if you want to stop the process
+            # raise e
+        time.sleep(5)
+
+    if os.path.exists("speaker_segments"):
+        shutil.rmtree("speaker_segments")
+
     return transcribed_segments
 
 def create_transcript(transcribed_segments: list) -> str:
@@ -147,7 +158,7 @@ def create_transcript(transcribed_segments: list) -> str:
 
 
 if __name__ == "__main__":
-    youtube_url="https://www.youtube.com/watch?v=iqQP7oKSH5Y&ab_channel=ABC7NewsBayArea"
+    youtube_url="https://www.youtube.com/watch?v=miD5NsLnCMg&ab_channel=KTVUFOX2SanFrancisco"
     audio_file_path = yt_dlp_download(youtube_url)
     diarization_results = diarize_audio(audio_file_path)
     with open("diarization_results.txt", "w") as f:

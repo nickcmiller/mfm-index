@@ -20,6 +20,8 @@ def groq_transcribe_audio(audio_chunk_file: str) -> Optional[str]:
         str: The transcribed text, or None if the transcription failed.
     """
     client = Groq()
+    max_retries = 5
+    retry_delay = 10  # seconds
 
     # Transcribe the audio file
     try:
@@ -28,12 +30,26 @@ def groq_transcribe_audio(audio_chunk_file: str) -> Optional[str]:
         file_size_megabytes = file_size_bytes / (1024 * 1024)
         logging.info(f"The size of the file sent to Groq Whisper is {file_size_megabytes} MB.")
 
-        with open(audio_chunk_file, "rb") as af:
-            transcript_chunk_file = client.audio.transcriptions.create(
-                file=(audio_chunk_file, af.read()),
-                model="whisper-large-v3",
-            )
-        return transcript_chunk_file.text
+        for attempt in range(max_retries):
+            try:
+                with open(audio_chunk_file, "rb") as af:
+                    transcript_chunk_file = client.audio.transcriptions.create(
+                        file=(audio_chunk_file, af.read()),
+                        model="whisper-large-v3",
+                    )
+                return transcript_chunk_file.text
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    logging.info(f"Received 429 response, waiting {retry_delay} seconds before retrying... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                else:
+                    logging.error(f"HTTP error occurred: {e}")
+                    raise
+            except Exception as e:
+                logging.error(f"Unexpected error occurred: {e}")
+                raise
+        logging.error("Max retries reached, failed to transcribe audio.")
+        return None
     except FileNotFoundError:
         logging.error(f"File {audio_chunk_file} not found.")
         raise

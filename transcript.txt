@@ -1,6 +1,24 @@
-SPEAKER_01:  High school there is putting the distribution of yearbooks on hold because a senior quote was actually an acronym for racial slur. Cappuccino High School in San Bruno had already handed out more than 100 yearbooks when this discovery was made yesterday. It's now asking those students to return them. We went to the high school tonight where there was a softball game and found some people were clearly angry about what had happened.
+SPEAKER_02:  We begin tonight with some new information in that deadly crash of an electric vehicle in Pleasanton last month that killed a family of four. KTVU's Crystal Bailey joins us now with details on a complaint that was filed with federal transportation officials. Crystal. Well, Heather, the loss of the entire George family in Pleasanton continues to impact the community as they mourn and search for answers. Tonight, though, there are more questions than there are answers as we dig into those complaints against the car they were driving, a Vietnamese electric car.
 
-SPEAKER_00:  It's upsetting and it happens all the time. 72 years old and it's still happening. So it's not better, it's still happening.
+SPEAKER_02:  It was a tragic crash in the quiet town of Pleasanton where Tarun George, his wife Rincey, and their sons Aaron and Rowan lost their lives. Friends of the family say they were heading home from a birthday party when the electric car, a 2023 VinFast VF8, crashed into a tree, causing a massive blaze. This video from the manufacturer's YouTube shows the same car they were driving. Two weeks later, a complaint filed with the National Highway Traffic Safety Administration indicates that the George family did not own the Vietnamese electric car. They were borrowing it from a co-worker. The owner filed the complaint last week, saying before the crash, they noticed the steering wheel was automatically veering to the right, even when lane assist was turned on. And on April 24th, the complaint says the owner was concerned that the failure recurred while the George family was driving. The federal agency has eight other complaints about the VinFast model, dating back to last summer. At least three of them mentioned steering and lane assist issues. Phil Recht, an attorney who formerly worked as chief counsel for NHTSA, says patterns usually catch the agency's eye.
 
-SPEAKER_01:  The school is now in the process of covering up the offensive language in the remaining yearbooks with tape. The school says if students try to remove it, the page will tear. In a letter, the principal says in part, quote, I interviewed the student and they admitted that this was their intention. Using hate speech has serious consequences, which may include suspension, exclusion from year-end school activities, and the graduation ceremony.
+SPEAKER_01:  If it sees multiple complaints about an activity or a performance issue that appear to be similar,
+
+SPEAKER_01:  particularly if they create severe risk. These are the circumstances under which NHTSA will
+
+SPEAKER_01:  conduct an initial or preliminary evaluation.
+
+SPEAKER_02:  Pleasanton Police confirmed George was driving a VinFast that first inning a pole on Foothill Road, then slammed into a tree, causing a fire first responders had trouble extinguishing. While that's not uncommon in EV fires, police say this fire reignited after it was put out. When we spoke to witnesses right after the crash, one man who lives off können. Hill Road told us he heard what he thought was multiple explosions.
+
+SPEAKER_00:  On that night, I heard like a big
+
+SPEAKER_00:  Crash sound.
+
+SPEAKER_00:  Every five to ten seconds, they boom, boom. So maybe around five to eight times,
+
+SPEAKER_02:  In a statement from VinFast, a spokesperson says, VinFast is aware of this tragic accident and our hearts go out to the family. The authorities are currently investigating the cause of the accident and will share their findings when their work is completed.
+
+SPEAKER_01:  It's really too early to tell exactly what was at play in this crash.
+
+SPEAKER_02:  And while Pleasanton police are still investigating the crash, the Alameda County coroner has not completed the autopsy report. And at this time, federal regulators have not begun their own investigation. Heather? Yeah, still some investigating to do here. All right, Crystal, thank you.
 
