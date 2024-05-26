@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 import torch
 import os
 import logging
+import shutil
 import time
 from download_video import yt_dlp_download
 from transcribe_video import groq_transcribe_audio
@@ -84,7 +85,7 @@ def save_speaker_segments(diarization_results: list, audio_file_path: str) -> li
     speaker_segments_dir = os.path.join(os.getcwd(), "speaker_segments")
 
     # Initialize speaker_segments list
-    speaker_segments = []
+    speaker_segment_list = []
 
     # Initialize counter
     counter = 1
@@ -105,18 +106,23 @@ def save_speaker_segments(diarization_results: list, audio_file_path: str) -> li
         speaker_segment.export(file_path, format="mp3")
         logging.debug(f"Exported speaker segment {counter} to {file_path}")
 
-        speaker_segments.append([speaker_label, file_path])
+        speaker_segment_list.append([speaker_label, file_path])
         
         # Increment counter
         counter += 1
+    
+    # Remove the audio file
+    os.remove(audio_file_path)
 
-    return speaker_segments
+    return speaker_segment_list
 
 def transcribe_speaker_segments(speaker_segments: list) -> list:
     transcribed_segments = []
     for speaker_label, file_path in speaker_segments:
         try:
+
             transcribed_text = groq_transcribe_audio(file_path)
+
             if transcribed_text is not None:
                 transcribed_segments.append({
                     "speaker": speaker_label,
@@ -124,10 +130,12 @@ def transcribe_speaker_segments(speaker_segments: list) -> list:
                 })
             else:
                 logging.error(f"Failed to transcribe speaker segment: {file_path}")
+
             try:
                 os.remove(file_path)
             except Exception as e:
                 logging.error(f"Failed to remove speaker segment: {file_path}. Error: {e}")
+
         except FileNotFoundError:
             logging.error(f"Audio file not found: {file_path}")
         except PermissionError:
@@ -141,9 +149,8 @@ def transcribe_speaker_segments(speaker_segments: list) -> list:
             logging.error(f"Request error occurred while transcribing {file_path}: {e}")
         except Exception as e:
             logging.error(f"An unexpected error occurred while transcribing {file_path}: {e}")
-            # Optionally, re-raise the exception if you want to stop the process
-            # raise e
-        time.sleep(5)
+        
+        time.sleep(3)
 
     if os.path.exists("speaker_segments"):
         shutil.rmtree("speaker_segments")

@@ -9,15 +9,15 @@ from dotenv import load_dotenv
 logging.basicConfig(level=logging.INFO)
 load_dotenv('.env')
 
-def groq_transcribe_audio(audio_chunk_file: str) -> Optional[str]:
+def groq_transcribe_audio(audio_chunk_file: str) -> str:
     """
-    Transcribe the audio file using Groq Whisper API.
+    This function transcribes an audio chunk file using the Groq library.
 
     Args:
-        audio_chunk_file (str): The path to the chunk of audio to transcribe.
+        audio_chunk_file (str): The path to the audio chunk file to be transcribed.
 
     Returns:
-        str: The transcribed text, or None if the transcription failed.
+        str: The transcribed text
     """
     client = Groq()
     max_retries = 5
