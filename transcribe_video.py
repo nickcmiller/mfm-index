@@ -41,8 +41,3 @@ def groq_transcribe_audio(audio_chunk_file: str) -> Optional[str]:
         logging.error(f"groq_transcribe_audio failed to transcribe audio file {audio_chunk_file}: {e}")
         raise
 
-if __name__ == "__main__":
-    audio_chunk_file = "Former OPD Chief LeRonne Armstrong announces city council run.mp3"
-    transcribed_text = groq_transcribe_audio(audio_chunk_file)
-    print(transcribed_text)
-

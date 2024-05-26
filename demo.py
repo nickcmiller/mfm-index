@@ -28,9 +28,12 @@ def diarize_audio(audio_file_path: str) -> list:
     start_time = time.time()  
 
     try:
+        logging.debug("Loading the pretrained pipeline...")
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=HUGGINGFACE_ACCESS_TOKEN)
+            use_auth_token=HUGGINGFACE_ACCESS_TOKEN
+        )
+        logging.debug("Pipeline loaded successfully.")
     except Exception as e:
         logging.error(f"Failed to load the pipeline: {e}")
         raise
@@ -39,22 +42,26 @@ def diarize_audio(audio_file_path: str) -> list:
     if pipeline is None:
         raise ValueError("Failed to load the pipeline. Check your Hugging Face access token.")
 
-    # send pipeline to GPU if CUDA is available
+    # Send pipeline to GPU if CUDA is available
     if torch.cuda.is_available():
         try:
+            logging.debug("Sending pipeline to GPU...")
             pipeline.to(torch.device("cuda"))
+            logging.debug("Pipeline sent to GPU successfully.")
         except Exception as e:
             logging.error(f"Failed to send pipeline to GPU: {e}")
             raise
 
     # Apply pretrained pipeline
     try:
+        logging.debug(f"Applying the pipeline to the audio file: {audio_file_path}")
         diarization = pipeline(audio_file_path)
+        logging.debug("Pipeline applied successfully.")
     except Exception as e:
         logging.error(f"Failed to apply pretrained pipeline: {e}")
         raise
 
-    # Assuming diarization_results is a list of tuples with turn.start and turn.end as floats
+    # Process the diarization results
     diarization_results = [(turn.start, turn.end, speaker) for turn, _, speaker in diarization.itertracks(yield_label=True)]
     
     # Record the end time and log the elapsed time
@@ -150,8 +157,6 @@ if __name__ == "__main__":
     # diarization_results_str = open("diarization_results.txt", "r").read()
     # diarization_results = eval(diarization_results_str)
     segments = save_speaker_segments(diarization_results, audio_file_path)
-    for segment in segments:
-        print(segment)
     transcribed_segments = transcribe_speaker_segments(segments)
     for segment in transcribed_segments:
         print(segment)

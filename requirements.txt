@@ -2,5 +2,7 @@ groq
 pyannote.audio
 python-dotenv
 pydub
+torch
+torchvision
 yt_dlp
 
