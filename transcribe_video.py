@@ -36,10 +36,10 @@ def groq_transcribe_audio(audio_chunk_file: str) -> Optional[str]:
         return transcript_chunk_file.text
     except FileNotFoundError:
         logging.error(f"File {audio_chunk_file} not found.")
-        return None
+        raise
     except Exception as e:
         logging.error(f"groq_transcribe_audio failed to transcribe audio file {audio_chunk_file}: {e}")
-        return None
+        raise
 
 if __name__ == "__main__":
     audio_chunk_file = "Former OPD Chief LeRonne Armstrong announces city council run.mp3"
