@@ -29,12 +29,12 @@ def diarize_audio(audio_file_path: str) -> list:
     start_time = time.time()  
 
     try:
-        logging.debug("Loading the pretrained pipeline...")
+        logging.info("Loading the pretrained pipeline...")
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
             use_auth_token=HUGGINGFACE_ACCESS_TOKEN
         )
-        logging.debug("Pipeline loaded successfully.")
+        logging.info("Pipeline loaded successfully.")
     except Exception as e:
         logging.error(f"Failed to load the pipeline: {e}")
         raise
@@ -46,18 +46,18 @@ def diarize_audio(audio_file_path: str) -> list:
     # Send pipeline to GPU if CUDA is available
     if torch.cuda.is_available():
         try:
-            logging.debug("Sending pipeline to GPU...")
+            logging.info("Sending pipeline to GPU...")
             pipeline.to(torch.device("cuda"))
-            logging.debug("Pipeline sent to GPU successfully.")
+            logging.info("Pipeline sent to GPU successfully.")
         except Exception as e:
             logging.error(f"Failed to send pipeline to GPU: {e}")
             raise
 
     # Apply pretrained pipeline
     try:
-        logging.debug(f"Applying the pipeline to the audio file: {audio_file_path}")
+        logging.info(f"Applying the pipeline to the audio file: {audio_file_path}")
         diarization = pipeline(audio_file_path)
-        logging.debug("Pipeline applied successfully.")
+        logging.info("Pipeline applied successfully.")
     except Exception as e:
         logging.error(f"Failed to apply pretrained pipeline: {e}")
         raise
@@ -120,9 +120,7 @@ def transcribe_speaker_segments(speaker_segments: list) -> list:
     transcribed_segments = []
     for speaker_label, file_path in speaker_segments:
         try:
-
             transcribed_text = groq_transcribe_audio(file_path)
-
             if transcribed_text is not None:
                 transcribed_segments.append({
                     "speaker": speaker_label,
@@ -130,27 +128,16 @@ def transcribe_speaker_segments(speaker_segments: list) -> list:
                 })
             else:
                 logging.error(f"Failed to transcribe speaker segment: {file_path}")
-
             try:
                 os.remove(file_path)
             except Exception as e:
                 logging.error(f"Failed to remove speaker segment: {file_path}. Error: {e}")
-
         except FileNotFoundError:
             logging.error(f"Audio file not found: {file_path}")
         except PermissionError:
             logging.error(f"Permission denied for accessing the file: {file_path}")
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429:
-                logging.error(f"Too many requests: unable to transcribe due to rate limits on {file_path}")
-            else:
-                logging.error(f"HTTP error occurred while transcribing {file_path}: Status code {e.response.status_code}")
-        except httpx.RequestError as e:
-            logging.error(f"Request error occurred while transcribing {file_path}: {e}")
         except Exception as e:
             logging.error(f"An unexpected error occurred while transcribing {file_path}: {e}")
-        
-        time.sleep(3)
 
     if os.path.exists("speaker_segments"):
         shutil.rmtree("speaker_segments")
@@ -165,15 +152,15 @@ def create_transcript(transcribed_segments: list) -> str:
 
 
 if __name__ == "__main__":
-    youtube_url="https://www.youtube.com/watch?v=miD5NsLnCMg&ab_channel=KTVUFOX2SanFrancisco"
+    youtube_url="https://www.youtube.com/watch?v=2Zj-VQh15ak&ab_channel=IndianaPacers"
     audio_file_path = yt_dlp_download(youtube_url)
-    diarization_results = diarize_audio(audio_file_path)
-    with open("diarization_results.txt", "w") as f:
-        f.write(str(diarization_results))
-    for result in diarization_results:
-        print(result)
-    # diarization_results_str = open("diarization_results.txt", "r").read()
-    # diarization_results = eval(diarization_results_str)
+    # diarization_results = diarize_audio(audio_file_path)
+    # with open("diarization_results.txt", "w") as f:
+    #     f.write(str(diarization_results))
+    # for result in diarization_results:
+    #     print(result)
+    diarization_results_str = open("diarization_results.txt", "r").read()
+    diarization_results = eval(diarization_results_str)
     segments = save_speaker_segments(diarization_results, audio_file_path)
     transcribed_segments = transcribe_speaker_segments(segments)
     for segment in transcribed_segments:

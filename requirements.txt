@@ -1,4 +1,5 @@
 groq
+httpx
 pyannote.audio
 python-dotenv
 pydub
