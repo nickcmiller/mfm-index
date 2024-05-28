@@ -13,7 +13,7 @@ import json
 logging.basicConfig(level=logging.INFO)
 load_dotenv('.env')
 
-def groq_transcribe_audio(audio_file: str) -> str:
+def call_groq(audio_file: str) -> str:
     """
     This function transcribes an audio file using the Groq library.
 
@@ -79,9 +79,9 @@ def format_response(transcription: str, added_duration: float=0.0) -> List[dict]
         segments.append({
             "start_time": start_time + added_duration, 
             "end_time": end_time + added_duration, 
-            "text": text.strip()
+            "text": text
         })
-    return json.dumps(segments, indent=4)
+    return segments
 
 def create_audio_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000) -> List[str]:
     """
@@ -136,19 +136,26 @@ def create_audio_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000
         counter += 1
     return chunk_files
 
-def transcribe_chunks(chunk_files: List[str]) -> str:
+def transcribe_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000) -> str:
+    try:
+        chunk_files = create_audio_chunks(audio_file, temp_dir, chunk_size)
+    except Exception as e:
+        logging.error(f"Failed to create audio chunks: {e}")
+        return []
     duration = 0
-    segments = []
+    all_segments = []
     for chunk_file in chunk_files:
-        response = groq_transcribe_audio(chunk_file)
-        segments.append(format_response(response, duration))
+        response = call_groq(chunk_file)
+        formatted_response = format_response(response, duration)
+        all_segments.extend(formatted_response)
         duration += response.duration
-    return segments
+    return all_segments
 
 if __name__ == "__main__":
     from download_video import yt_dlp_download
-    url = "https://www.youtube.com/watch?v=wz6-0EPBvqE&ab_channel=IndianaPacers"
+    url = "https://www.youtube.com/watch?v=9l0ieOqLMxk&ab_channel=CNBCTelevision"
     audio_file = yt_dlp_download(url)
-    chunks = create_audio_chunks(audio_file, "temp")
-    segments = transcribe_chunks(chunks)
-    print(segments)
+    segments = transcribe_chunks(audio_file, "temp")
+    output_file = "segments.json"
+    with open(output_file, "w") as f:
+        json.dump(segments, f, indent=4)
