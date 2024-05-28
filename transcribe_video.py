@@ -64,3 +64,6 @@ def groq_transcribe_audio(audio_chunk_file: str) -> str:
         logging.error(f"Unexpected error occurred: {e}")
         raise
 
+if __name__ == "__main__":
+    print(groq_transcribe_audio("./divider.mp3"))
+
