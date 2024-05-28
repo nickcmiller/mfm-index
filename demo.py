@@ -196,7 +196,7 @@ def transcribe_combined_segments(combined_segments: list, speaker_list: list) ->
 
     combined_list = []
     for segment in transcribed_segments:
-        
+        segment_list = [s.strip() for s in segment.split("Divider, divider, divider.") if s.strip() != ""]
         print(f"Segment List: {segment_list}")
         combined_list.extend(segment_list)
 
