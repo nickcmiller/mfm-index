@@ -6,9 +6,6 @@ from typing import List
 import json
 import os
 import logging
-import shutil
-import time
-from download_video import yt_dlp_download
 from transcribe_video import groq_transcribe_audio, format_response
 
 logging.basicConfig(level=logging.DEBUG)
@@ -75,17 +72,24 @@ def diarize_audio(audio_file_path: str) -> List[dict]:
     return diarization_results
 
 def merge_diarization_results_and_transcription(diarization_results: List[dict], audio_file_path: str) -> List[dict]:
-    transcription = format_response(groq_transcribe_audio(audio_file_path))
+    
+    segments = []
+    try:
+        transcription_response = groq_transcribe_audio(audio_file_path)
+        if transcription_response is None:
+            raise ValueError("Failed to transcribe audio. The transcription response is None.")
+        segments = format_response(transcription_response)
+    except Exception as e:
+        logging.error(f"Error during transcription or formatting: {e}")
+        raise
 
     merged_results = []
-    segments = transcription
     for d in diarization_results:
         combined_text = ""
         speaker = d["speaker"]
         used_segments = []
         for segment in segments:
             if segment["start_time"] < d["end_time"]-1:
-                print(f"{segment['start_time']} || {d['end_time']-1}")
                 combined_text += segment["text"]
                 used_segments.append(segment)
         segments = [segment for segment in segments if segment not in used_segments]
@@ -106,18 +110,4 @@ def create_diarized_transcript(audio_file_path: str) -> str:
     merged_results = merge_diarization_results_and_transcription(diarization_results, audio_file_path)
     return create_transcript(merged_results)
 
-if __name__ == "__main__":
-    audio_file = "Former OPD Chief LeRonne Armstrong announces city council run.mp3"
-    diarization_results = diarize_audio(audio_file)
-    with open("diarization_results.txt", "w") as f:
-        f.write(str(diarization_results))
-    for result in diarization_results:
-        print(result)
-    diarization_results_str = open("diarization_results.txt", "r").read()
-    diarization_results = eval(diarization_results_str)
-    merged_results = merge_diarization_results_and_transcription(diarization_results, audio_file)
-    print(json.dumps(merged_results, indent=4))
-    transcript = create_transcript(merged_results)
-    with open("transcript.txt", "w") as f:
-        f.write(transcript)
-    print(transcript)
+# if __name__ == "__main__":
