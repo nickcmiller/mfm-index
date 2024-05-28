@@ -38,10 +38,9 @@ def groq_transcribe_audio(audio_chunk_file: str) -> str:
                     transcript_chunk_file = client.audio.transcriptions.create(
                         file=(audio_chunk_file, af.read()),
                         model="whisper-large-v3",
-                        response_format="verbose_json"
                     )
                 time.sleep(3)
-                return transcript_chunk_file
+                return transcript_chunk_file.text
             except Exception as e:
                 if "429" in str(e) or "rate_limit_exceeded" in str(e):
                     logging.info(f"Received 429 response, waiting {retry_delay} seconds before retrying... (Attempt {attempt + 1}/{max_retries})")
@@ -64,7 +63,3 @@ def groq_transcribe_audio(audio_chunk_file: str) -> str:
     except Exception as e:
         logging.error(f"Unexpected error occurred: {e}")
         raise
-
-if __name__ == "__main__":
-    print(groq_transcribe_audio('Former OPD Chief LeRonne Armstrong announces city council run.mp3'))
-
