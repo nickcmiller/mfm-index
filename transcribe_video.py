@@ -1,12 +1,13 @@
 from groq import Groq
 import os
-from typing import List, Optional
+from typing import List, Optional, Dict
 import logging
 import traceback
 import shutil
 from dotenv import load_dotenv
 import time
 import httpx
+import json
 
 logging.basicConfig(level=logging.INFO)
 load_dotenv('.env')
@@ -19,7 +20,7 @@ def groq_transcribe_audio(audio_chunk_file: str) -> str:
         audio_chunk_file (str): The path to the audio chunk file to be transcribed.
 
     Returns:
-        str: The transcribed text
+        str: JSON with the transcribed audio.
     """
     client = Groq()
     max_retries = 6
@@ -41,7 +42,7 @@ def groq_transcribe_audio(audio_chunk_file: str) -> str:
                         response_format="verbose_json"
                     )
                 time.sleep(3)
-                return transcript_chunk_file
+                return json.dumps(transcript_chunk_file.segments, indent=4)
             except Exception as e:
                 if "429" in str(e) or "rate_limit_exceeded" in str(e):
                     logging.info(f"Received 429 response, waiting {retry_delay} seconds before retrying... (Attempt {attempt + 1}/{max_retries})")
@@ -65,6 +66,21 @@ def groq_transcribe_audio(audio_chunk_file: str) -> str:
         logging.error(f"Unexpected error occurred: {e}")
         raise
 
-if __name__ == "__main__":
-    print(groq_transcribe_audio('Former OPD Chief LeRonne Armstrong announces city council run.mp3'))
+def format_response(response: str) -> List[dict]:
+    parsed_response = json.loads(response)
 
+    segments = []
+    for segment in parsed_response:
+        start_time = segment["start"]
+        end_time = segment["end"]
+        text = segment["text"]
+        segments.append({
+            "start_time": start_time, 
+            "end_time": end_time, 
+            "text": text.strip()
+        })
+    return segments
+
+if __name__ == "__main__":
+    response = groq_transcribe_audio('Former OPD Chief LeRonne Armstrong announces city council run.mp3')    
+    print(format_response(response))

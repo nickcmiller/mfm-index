@@ -2,6 +2,7 @@ from pyannote.audio import Pipeline
 from pydub import AudioSegment
 from dotenv import load_dotenv
 import torch
+from typing import List
 import os
 import logging
 import shutil
@@ -15,7 +16,7 @@ load_dotenv()
 # Need to accept the pyannote terms of service on Hugging Face website
 HUGGINGFACE_ACCESS_TOKEN = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
 
-def diarize_audio(audio_file_path: str) -> list:
+def diarize_audio(audio_file_path: str) -> List[dict]:
     """
     This function diarizes an audio file using the pyannote library.
 
@@ -23,7 +24,7 @@ def diarize_audio(audio_file_path: str) -> list:
         audio_file_path (str): The path to the audio file to be diarized.
 
     Returns:
-        list: A list of tuples containing the start time, end time, and speaker label for each segment of the audio file.
+        list: A list of dictionaries containing the start time, end time, and speaker label for each segment of the audio file.
     """
     # Record the start time
     start_time = time.time()  
@@ -63,7 +64,7 @@ def diarize_audio(audio_file_path: str) -> list:
         raise
 
     # Process the diarization results
-    diarization_results = [(turn.start, turn.end, speaker) for turn, _, speaker in diarization.itertracks(yield_label=True)]
+    diarization_results = [{"start_time": turn.start, "end_time": turn.end, "speaker": speaker} for turn, _, speaker in diarization.itertracks(yield_label=True)]
     
     # Record the end time and log the elapsed time
     end_time = time.time()  
