@@ -91,17 +91,24 @@ def merge_diarization_results_and_transcription(diarization_results: List[dict],
         speaker = d["speaker"]
         used_segments = []
         for segment in segments:
+
             overlap = overlap_percentage(segment, d)
             if overlap > 50:  # Using 50% as the threshold for inclusion
-                print(f"Segment: {segment}\nOverlap: {overlap}\n")
-                combined_text += f"|{segment['start_time']} - {segment['text']}- {segment['end_time']}"
+                combined_text += f"|{segment['text']}|"
                 used_segments.append(segment)
             elif segment["end_time"] < d["end_time"]:
-                combined_text += f"|{segment['start_time']} - {segment['text']} - {segment['end_time']}"
+                combined_text += f"|{segment['text']}|"
+                used_segments.append(segment)
+            elif segment == segments[-1] and d == diarization_results[-1]:
+                combined_text += f"|{segment['text']}|"
                 used_segments.append(segment)
         segments = [segment for segment in segments if segment not in used_segments]
-        d["transcription"] = f"{str(d['start_time'])} - {str(d['end_time'])}: {combined_text}"
-        merged_results.append(d)
+        if len(combined_text) > 0:
+            d["transcription"] = f"{str(d['start_time'])} - {str(d['end_time'])}: {combined_text}"
+            logging.info(f"Transcription for {d['speaker']}: {d['transcription']}")
+            merged_results.append(d)
+        else:
+            logging.info(f"No text found for {d['speaker']}: {d['start_time']} - {d['end_time']}")
 
     return merged_results
 
@@ -130,7 +137,7 @@ def create_diarized_transcript(audio_file_path: str, diarization_results: List[d
 if __name__ == "__main__":
     new_create = True
     from download_video import yt_dlp_download
-    url = "https://www.youtube.com/watch?v=vcTvds-Q6uk&ab_channel=NBCBayArea"
+    url = "https://www.youtube.com/watch?v=wz6-0EPBvqE&t=275s&ab_channel=IndianaPacers"
         
     if new_create is False:
         audio_file_path = yt_dlp_download(url)
@@ -142,14 +149,14 @@ if __name__ == "__main__":
     print(f"Audio file path: {audio_file_path}")
 
     if new_create is False:
-        segments = transcribe_chunks(audio_file_path, "temp", response_type="clump")
+        segments = main_transcribe_audio(audio_file_path, response_type="clump")
         with open("segments.json", "w") as f:
             json.dump(segments, f, indent=4)
     else:
         with open("segments.json", "r") as f:
             segments = json.load(f)
 
-    if new_create is False:
+    if new_create is True:
         diarization_results = diarize_audio(audio_file_path)
         with open("diarization_results.json", "w") as f:
             json.dump(diarization_results, f, indent=4)
@@ -157,7 +164,7 @@ if __name__ == "__main__":
         with open("diarization_results.json", "r") as f:
             diarization_results = json.load(f)
 
-    result = create_diarized_transcript(audio_file_path, diarization_results, segments)
+    result = create_diarized_transcript(audio_file_path, diarization_results, formatted_chunks)
     with open("transcript.txt", "w") as f:
         f.write(result)
     # print(result)

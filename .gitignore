@@ -1,4 +1,6 @@
 .env
 *.mp3
+*.json
 *.txt
 !requirements.txt
+

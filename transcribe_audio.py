@@ -70,7 +70,7 @@ def call_groq(audio_file: str) -> str:
         logging.error(f"Unexpected error occurred: {e}")
         raise
 
-def create_audio_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000) -> List[str]:
+def create_audio_chunks(audio_file_path: str, temp_dir: str, chunk_size: int=25*60000) -> List[str]:
     """
     Splits an audio file into smaller segments or chunks based on a specified duration. This function is useful for processing large audio files incrementally or in parallel, which can be beneficial for tasks such as audio analysis or transcription where handling smaller segments might be more manageable.
 
@@ -93,26 +93,26 @@ def create_audio_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000
         ValueError: If `chunk_size` is set to a non-positive value.
     """
     os.makedirs(temp_dir, exist_ok=True)
-    file_name = os.path.splitext(os.path.basename(audio_file))[0]
+    file_name = os.path.splitext(os.path.basename(audio_file_path))[0]
 
     try:
-        audio = AudioSegment.from_file(audio_file)
+        audio = AudioSegment.from_file(audio_file_path)
     except Exception as e:
-        logging.error(f"create_audio_chunks failed to load audio file {audio_file}: {e}")
+        logging.error(f"create_audio_chunks failed to load audio file {audio_file_path}: {e}")
         logging.error(traceback.format_exc())
         return []
 
     start = 0
     end = chunk_size
     counter = 0
-    chunk_files = []
+    audio_chunk_paths = []
 
     while start < len(audio):
         chunk = audio[start:end]
         chunk_file_path = os.path.join(temp_dir, f"{counter}_{file_name}.mp3")
         try:
             chunk.export(chunk_file_path, format="mp3") # Using .mp3 because it's cheaper
-            chunk_files.append(chunk_file_path)
+            audio_chunk_paths.append(chunk_file_path)
         except Exception as e:
             error_message = f"create_audio_chunks failed to export chunk {counter}: {e}"
             logging.error(error_message)
@@ -121,72 +121,140 @@ def create_audio_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000
         start += chunk_size
         end += chunk_size
         counter += 1
-    return chunk_files
+    return audio_chunk_paths
 
-def clump_response(transcription: str, added_duration: float=0.0) -> List[dict]:
-    if isinstance(transcription, list):
-        transcription = json.dumps(transcription)
+def transcribe_chunks(audio_chunk_paths: List[str]) -> List[dict]:
 
-    segments = []
+    transcribed_chunks = []
+
+    for chunk_path in audio_chunk_paths:
+        try:
+            response = call_groq(chunk_path)
+        except Exception as e:
+            logging.error(f"transcribe_chunks failed to call_groq for {chunk_path}: {e}")
+            response = None
+
+        transcribed_chunk = {
+            "segments": response.segments,
+            "duration": response.duration
+        }
+        transcribed_chunks.append(transcribed_chunk)
+    
+    return transcribed_chunks
+
+def clump_response(segments: str, added_duration: float=0.0) -> List[dict]:
+
+    formatted_segments = []
     current_segment = ""
-    for segment in transcription.segments:
+    current_segments = []
+    start_time = 0
+    end_time = 0
+
+    for segment in segments:
+        # If the current segment is empty, add the text to the current segment
         if current_segment == "":
             current_segment += segment["text"]
+            current_segments.append(segment)
             start_time = segment["start"]
-        elif segment["text"].strip().endswith(('.', '?', '!')):
-            current_segment += segment["text"]
+        # If the current segment ends with a punctuation mark, add the current segment to the formatted segments
+        elif segment["text"].strip().endswith(('.', '?', '!')) or segment["end"] == segments[-1]["end"]:
             end_time = segment["end"]
-            segments.append({
-                "start_time": start_time + added_duration, 
-                "end_time": end_time + added_duration, 
-                "text": current_segment
-            })
+            if end_time - start_time > 60:
+                for s in current_segments:
+                    formatted_segments.append({
+                        "start_time": s["start"] + added_duration,
+                        "end_time": s["end"] + added_duration,
+                        "text": s["text"]
+                    })
+            else:
+                current_segment += segment["text"]
+                formatted_segments.append({
+                    "start_time": start_time + added_duration, 
+                    "end_time": end_time + added_duration, 
+                    "text": current_segment
+                })
             current_segment = ""
+            current_segments = []
         else:
             current_segment += segment["text"]
+            current_segments.append(segment)
 
-    return segments
+    return formatted_segments
 
-def default_response(transcription: str, added_duration: float=0.0) -> List[dict]:
-    if isinstance(transcription, list):
-        transcription = json.dumps(transcription)
-
-    segments = []
-    for segment in transcription.segments:
+def default_response(segments: str, added_duration: float=0.0) -> List[dict]:
+    
+    formatted_segments = []
+    for segment in segments:
         start_time = segment["start"]
         end_time = segment["end"]
         text = segment["text"]
-        segments.append({
+        formatted_segments.append({
                 "start_time": start_time + added_duration, 
                 "end_time": end_time + added_duration, 
                 "text": text
         })
 
+    return formatted_segments
+
+def format_chunks(transcribed_chunks: List[dict], response_type: str="default") -> List[dict]:
+    
+    duration = 0
+    segments = []
+
+    for chunk_dict in transcribed_chunks:
+        if response_type == "clump":
+            formatted_response = clump_response(chunk_dict["segments"], duration)
+        else:
+            formatted_response = default_response(chunk_dict["segments"], duration)
+        segments.extend(formatted_response)
+        duration += chunk_dict["duration"]
+
     return segments
 
-def transcribe_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000, response_type: str="default") -> str:
-    try:
-        chunk_files = create_audio_chunks(audio_file, temp_dir, chunk_size)
-    except Exception as e:
-        logging.error(f"Failed to create audio chunks: {e}")
-        return []
-    duration = 0
-    all_segments = []
-    for chunk_file in chunk_files:
-        response = call_groq(chunk_file)
-        if response_type == "clump":
-            formatted_response = clump_response(response, duration)
-        else:
-            formatted_response = default_response(response, duration)
-        all_segments.extend(formatted_response)
-        duration += response.duration
-    return all_segments
+def main_transcribe_audio(audio_file_path: str, response_type: str="clump"):
+    
+    audio_chunks = create_audio_chunks(audio_file_path, "temp")
+    transcribed_chunks = transcribe_chunks(audio_chunks)
+    segments = format_chunks(transcribed_chunks, response_type=response_type)
+    
+    return segments
+
+
 
 if __name__ == "__main__":
+    new_create = True
     from download_video import yt_dlp_download
-    url = "https://www.youtube.com/watch?v=9l0ieOqLMxk&ab_channel=CNBCTelevision"
-    audio_file = yt_dlp_download(url)
-    segments = transcribe_chunks(audio_file, "temp")
-    output_file = "segments.json"
-    with open(output_file, "w") as f:
-        json.dump(segments, f, indent=4)
+    url = "https://www.youtube.com/watch?v=wz6-0EPBvqE&t=275s&ab_channel=IndianaPacers"
+    
+    if new_create is False:
+        audio_file_path = yt_dlp_download(url)
+        with open("audio_file_path.txt", "w") as f:
+            f.write(audio_file_path)
+    else:
+        with open("audio_file_path.txt", "r") as f:
+            audio_file_path = f.read()
+    print(f"Audio file path: {audio_file_path}")
+
+    if new_create is False:
+        audio_chunks = create_audio_chunks(audio_file_path, "temp")
+        transcribed_chunks = transcribe_chunks(audio_chunks)
+        output_file = "transcribed_chunks.json"
+        import json
+        with open(output_file, "w") as f:
+            json.dump(transcribed_chunks, f, indent=4)
+    else:
+        with open("transcribed_chunks.json", "r") as f:
+            transcribed_chunks = json.load(f)
+            
+    
+    if new_create is True:
+        segments = format_chunks(transcribed_chunks, response_type="clump")
+        output_file = "segments.json"
+        with open(output_file, "w") as f:
+            json.dump(segments, f, indent=4)
+    else:
+        with open("segments.json", "r") as f:
+            segments = json.load(f)
+            
+
+
