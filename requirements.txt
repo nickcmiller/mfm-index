@@ -7,3 +7,4 @@ torch
 torchvision
 yt_dlp
 
+openai
