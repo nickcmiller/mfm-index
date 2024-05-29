@@ -157,7 +157,12 @@ if __name__ == "__main__":
             segments = json.load(f)
 
     if new_create is True:
-        diarization_results = diarize_audio(audio_file_path)
+        from transcribe_audio import create_audio_chunks
+        audio_chunks = create_audio_chunks(audio_file_path, "temp")
+        diarization_results = []
+        for audio_chunk in audio_chunks:
+            diarization_chunk = diarize_audio(audio_chunk)
+            diarization_results.extend(diarization_chunk)
         with open("diarization_results.json", "w") as f:
             json.dump(diarization_results, f, indent=4)
     else:

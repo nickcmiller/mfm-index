@@ -1,8 +1,7 @@
 from groq import Groq
-from openai import OpenAI
 from pydub import AudioSegment
 import os
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 import logging
 import traceback
 import shutil
@@ -14,7 +13,7 @@ import json
 logging.basicConfig(level=logging.INFO)
 load_dotenv('.env')
 
-def call_groq(audio_file: str) -> str:
+def call_groq(audio_file: str) -> Dict[str, Any]:
     """
     This function transcribes an audio file using the Groq library.
 
@@ -25,6 +24,7 @@ def call_groq(audio_file: str) -> str:
         str: JSON with the transcribed audio.
     """
     # client = Groq()
+    from openai import OpenAI
     client = OpenAI()
     max_retries = 6
     retry_delay = 10  # seconds
@@ -123,7 +123,7 @@ def create_audio_chunks(audio_file_path: str, temp_dir: str, chunk_size: int=25*
         counter += 1
     return audio_chunk_paths
 
-def transcribe_chunks(audio_chunk_paths: List[str]) -> List[dict]:
+def transcribe_chunks(audio_chunk_paths: List[str], temp_dir: str) -> List[dict]:
 
     transcribed_chunks = []
 
@@ -139,6 +139,8 @@ def transcribe_chunks(audio_chunk_paths: List[str]) -> List[dict]:
             "duration": response.duration
         }
         transcribed_chunks.append(transcribed_chunk)
+
+        shutil.rmtree(temp_dir)
     
     return transcribed_chunks
 
@@ -214,7 +216,7 @@ def format_chunks(transcribed_chunks: List[dict], response_type: str="default") 
 def main_transcribe_audio(audio_file_path: str, response_type: str="clump"):
     
     audio_chunks = create_audio_chunks(audio_file_path, "temp")
-    transcribed_chunks = transcribe_chunks(audio_chunks)
+    transcribed_chunks = transcribe_chunks(audio_chunks, "temp")
     segments = format_chunks(transcribed_chunks, response_type=response_type)
     
     return segments
@@ -237,7 +239,7 @@ if __name__ == "__main__":
 
     if new_create is False:
         audio_chunks = create_audio_chunks(audio_file_path, "temp")
-        transcribed_chunks = transcribe_chunks(audio_chunks)
+        transcribed_chunks = transcribe_chunks(audio_chunks, "temp")
         output_file = "transcribed_chunks.json"
         import json
         with open(output_file, "w") as f:
