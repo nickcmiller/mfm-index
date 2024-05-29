@@ -77,17 +77,27 @@ def diarize_audio(audio_file_path: str) -> List[dict]:
     return diarization_results
 
 def merge_diarization_results_and_transcription(diarization_results: List[dict], segments: List[dict]) -> List[dict]:
-    
     merged_results = []
+
+    def overlap_percentage(segment, diarization):
+        start = max(segment["start_time"], diarization["start_time"])
+        end = min(segment["end_time"], diarization["end_time"])
+        overlap = max(0, end - start)
+        segment_duration = segment["end_time"] - segment["start_time"]
+        return (overlap / segment_duration) * 100
 
     for d in diarization_results:
         combined_text = ""
         speaker = d["speaker"]
         used_segments = []
         for segment in segments:
-            segment_middle = (segment["start_time"] + segment["end_time"]) * .25
-            if segment_middle < d["end_time"]:
+            overlap = overlap_percentage(segment, d)
+            if overlap > 50:  # Using 50% as the threshold for inclusion
+                print(f"Segment: {segment}\nOverlap: {overlap}\n")
                 combined_text += f"|{segment['start_time']} - {segment['text']}- {segment['end_time']}"
+                used_segments.append(segment)
+            elif segment["end_time"] < d["end_time"]:
+                combined_text += f"|{segment['start_time']} - {segment['text']} - {segment['end_time']}"
                 used_segments.append(segment)
         segments = [segment for segment in segments if segment not in used_segments]
         d["transcription"] = f"{str(d['start_time'])} - {str(d['end_time'])}: {combined_text}"
@@ -118,8 +128,8 @@ def create_diarized_transcript(audio_file_path: str, diarization_results: List[d
     return create_transcript(merged_results)
 
 if __name__ == "__main__":
-    from download_video import yt_dlp_download
     new_create = True
+    from download_video import yt_dlp_download
     url = "https://www.youtube.com/watch?v=vcTvds-Q6uk&ab_channel=NBCBayArea"
         
     if new_create is False:
@@ -132,7 +142,7 @@ if __name__ == "__main__":
     print(f"Audio file path: {audio_file_path}")
 
     if new_create is False:
-        segments = transcribe_chunks(audio_file_path, "temp")
+        segments = transcribe_chunks(audio_file_path, "temp", response_type="clump")
         with open("segments.json", "w") as f:
             json.dump(segments, f, indent=4)
     else:
