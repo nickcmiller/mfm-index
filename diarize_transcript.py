@@ -85,11 +85,12 @@ def merge_diarization_results_and_transcription(diarization_results: List[dict],
         speaker = d["speaker"]
         used_segments = []
         for segment in segments:
-            if segment["start_time"] < d["end_time"]-1:
-                combined_text += segment["text"]
+            segment_middle = (segment["start_time"] + segment["end_time"]) * .25
+            if segment_middle < d["end_time"]:
+                combined_text += f"|{segment['start_time']} - {segment['text']}- {segment['end_time']}"
                 used_segments.append(segment)
         segments = [segment for segment in segments if segment not in used_segments]
-        d["transcription"] = combined_text
+        d["transcription"] = f"{str(d['start_time'])} - {str(d['end_time'])}: {combined_text}"
         merged_results.append(d)
 
     return merged_results
@@ -100,32 +101,53 @@ def create_transcript(transcribed_segments: list) -> str:
         transcript += f"{segment['speaker']}: {segment['transcription']}\n\n"
     return transcript
 
-def create_diarized_transcript(audio_file_path: str, diarization_results: List[dict]=None) -> str:
+def create_diarized_transcript(audio_file_path: str, diarization_results: List[dict]=None, segments: List[dict]=None) -> str:
 
     if diarization_results is None:
         diarization_results = diarize_audio(audio_file_path)
 
-    segments = []
-    try:
-        segments = transcribe_chunks(audio_file_path, "temp")
-    except Exception as e:
-        logging.error(f"Error during transcription: {e}")
-        raise
+    if segments is None:
+        try:
+            segments = transcribe_chunks(audio_file_path, "temp")
+        except Exception as e:
+            logging.error(f"Error during transcription: {e}")
+            raise
 
     merged_results = merge_diarization_results_and_transcription(diarization_results, segments)
 
     return create_transcript(merged_results)
 
 if __name__ == "__main__":
-    url = "https://www.youtube.com/watch?v=Q1dHFIT6-zo&ab_channel=talkSPORT"
     from download_video import yt_dlp_download
-    audio_file_path = yt_dlp_download(url)
-    # audio_file = 'Elon Musk startup xAI raises $6 billion.mp3'
-    # diarization_results = diarize_audio(audio_file)
-    # with open("diarization_results.json", "w") as f:
-    #     json.dump(diarization_results, f, indent=4)
-    # with open("diarization_results.json", "r") as f:
-    #     diarization_results = json.load(f)
+    new_create = True
+    url = "https://www.youtube.com/watch?v=vcTvds-Q6uk&ab_channel=NBCBayArea"
+        
+    if new_create is False:
+        audio_file_path = yt_dlp_download(url)
+        with open("audio_file_path.txt", "w") as f:
+            f.write(audio_file_path)
+    else:
+        with open("audio_file_path.txt", "r") as f:
+            audio_file_path = f.read()
+    print(f"Audio file path: {audio_file_path}")
 
-    result = create_diarized_transcript(audio_file_path)
-    print(result)
+    if new_create is False:
+        segments = transcribe_chunks(audio_file_path, "temp")
+        with open("segments.json", "w") as f:
+            json.dump(segments, f, indent=4)
+    else:
+        with open("segments.json", "r") as f:
+            segments = json.load(f)
+
+    if new_create is False:
+        diarization_results = diarize_audio(audio_file_path)
+        with open("diarization_results.json", "w") as f:
+            json.dump(diarization_results, f, indent=4)
+    else:
+        with open("diarization_results.json", "r") as f:
+            diarization_results = json.load(f)
+
+    result = create_diarized_transcript(audio_file_path, diarization_results, segments)
+    with open("transcript.txt", "w") as f:
+        f.write(result)
+    # print(result)

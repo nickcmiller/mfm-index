@@ -1,4 +1,5 @@
 from groq import Groq
+from openai import OpenAI
 from pydub import AudioSegment
 import os
 from typing import List, Optional, Dict
@@ -23,7 +24,8 @@ def call_groq(audio_file: str) -> str:
     Returns:
         str: JSON with the transcribed audio.
     """
-    client = Groq()
+    # client = Groq()
+    client = OpenAI()
     max_retries = 6
     retry_delay = 10  # seconds
 
@@ -39,7 +41,8 @@ def call_groq(audio_file: str) -> str:
                 with open(audio_file, "rb") as af:
                     transcription= client.audio.transcriptions.create(
                         file=(audio_file, af.read()),
-                        model="whisper-large-v3",
+                        # model="whisper-large-v3",
+                        model="whisper-1",
                         response_format="verbose_json"
                     )
                 time.sleep(3)
@@ -66,22 +69,6 @@ def call_groq(audio_file: str) -> str:
     except Exception as e:
         logging.error(f"Unexpected error occurred: {e}")
         raise
-
-def format_response(transcription: str, added_duration: float=0.0) -> List[dict]:
-    if isinstance(transcription, list):
-        transcription = json.dumps(transcription)
-
-    segments = []
-    for segment in transcription.segments:
-        start_time = segment["start"]
-        end_time = segment["end"]
-        text = segment["text"]
-        segments.append({
-            "start_time": start_time + added_duration, 
-            "end_time": end_time + added_duration, 
-            "text": text
-        })
-    return segments
 
 def create_audio_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000) -> List[str]:
     """
@@ -136,7 +123,48 @@ def create_audio_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000
         counter += 1
     return chunk_files
 
-def transcribe_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000) -> str:
+def clump_response(transcription: str, added_duration: float=0.0) -> List[dict]:
+    if isinstance(transcription, list):
+        transcription = json.dumps(transcription)
+
+    segments = []
+    current_segment = ""
+    for segment in transcription.segments:
+        if current_segment == "":
+            current_segment += segment["text"]
+            start_time = segment["start"]
+        elif segment["text"].strip().endswith(('.', '?', '!')):
+            current_segment += segment["text"]
+            end_time = segment["end"]
+            segments.append({
+                "start_time": start_time + added_duration, 
+                "end_time": end_time + added_duration, 
+                "text": current_segment
+            })
+            current_segment = ""
+        else:
+            current_segment += segment["text"]
+
+    return segments
+
+def default_response(transcription: str, added_duration: float=0.0) -> List[dict]:
+    if isinstance(transcription, list):
+        transcription = json.dumps(transcription)
+
+    segments = []
+    for segment in transcription.segments:
+        start_time = segment["start"]
+        end_time = segment["end"]
+        text = segment["text"]
+        segments.append({
+                "start_time": start_time + added_duration, 
+                "end_time": end_time + added_duration, 
+                "text": text
+        })
+
+    return segments
+
+def transcribe_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000, response_type: str="default") -> str:
     try:
         chunk_files = create_audio_chunks(audio_file, temp_dir, chunk_size)
     except Exception as e:
@@ -146,7 +174,10 @@ def transcribe_chunks(audio_file: str, temp_dir: str, chunk_size: int=25*60000) 
     all_segments = []
     for chunk_file in chunk_files:
         response = call_groq(chunk_file)
-        formatted_response = format_response(response, duration)
+        if response_type == "clump":
+            formatted_response = clump_response(response, duration)
+        else:
+            formatted_response = default_response(response, duration)
         all_segments.extend(formatted_response)
         duration += response.duration
     return all_segments
