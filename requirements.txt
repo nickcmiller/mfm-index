@@ -4,6 +4,7 @@ pyannote.audio
 python-dotenv
 pydub
 torch
+torchaudio
 torchvision
 yt_dlp
 
