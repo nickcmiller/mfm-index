@@ -249,7 +249,7 @@ if __name__ == "__main__":
             transcribed_chunks = json.load(f)
             
     
-    if new_create is True:
+    if new_create is False:
         segments = format_chunks(transcribed_chunks, response_type="clump")
         output_file = "segments.json"
         with open(output_file, "w") as f:

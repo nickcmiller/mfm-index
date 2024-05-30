@@ -11,8 +11,6 @@ from typing import List, Dict
 import json
 import os
 
-
-
 logging.basicConfig(level=logging.DEBUG)
 
 load_dotenv()
@@ -75,6 +73,33 @@ def diarize_audio(audio_file_path: str) -> List[dict]:
     logging.info(f"Elapsed time: {elapsed_time} seconds")
 
     return diarization_results
+
+def condense_diarization_results(diarized_segments: List[dict]) -> List[dict]:
+
+    # Remove segments that are less than a second long
+    diarized_segments = [segment for segment in diarized_segments if segment['end_time'] - segment['start_time'] >= 1.0]
+
+    # Initialize variables for combining consecutive segments
+    condensed_results = []
+    current_segment = None
+    tolerance = 15
+
+    # Iterate through the data to combine consecutive segments
+    for segment in diarized_segments:
+        print(f"Current segment is: {current_segment}\n")
+        if current_segment is None:
+            current_segment = segment
+        elif current_segment["speaker"] == segment["speaker"] and abs(current_segment["end_time"] - segment["start_time"]) <= tolerance:
+            current_segment["end_time"] = segment["end_time"]
+        else:
+            condensed_results.append(current_segment)
+            current_segment = segment
+    
+    # Append the last segment if it hasn't been added to the condensed results
+    if current_segment is not None and current_segment not in condensed_results:
+        condensed_results.append(current_segment)
+
+    return condensed_results
 
 def merge_diarization_results_and_transcription(diarization_results: List[dict], segments: List[dict]) -> List[dict]:
     merged_results = []
@@ -156,11 +181,13 @@ if __name__ == "__main__":
         with open("segments.json", "r") as f:
             segments = json.load(f)
 
-    if new_create is True:
+    if new_create is False:
         from transcribe_audio import create_audio_chunks
         audio_chunks = create_audio_chunks(audio_file_path, "temp")
         diarization_results = []
+
         for audio_chunk in audio_chunks:
+            # still need to implement iteration
             diarization_chunk = diarize_audio(audio_chunk)
             diarization_results.extend(diarization_chunk)
         with open("diarization_results.json", "w") as f:
@@ -169,7 +196,18 @@ if __name__ == "__main__":
         with open("diarization_results.json", "r") as f:
             diarization_results = json.load(f)
 
-    result = create_diarized_transcript(audio_file_path, diarization_results, formatted_chunks)
+    if new_create is True:
+        condensed_results = condense_diarization_results(diarization_results)
+        with open("condensed_results.json", "w") as f:
+            json.dump(condensed_results, f, indent=4)
+    else:
+        with open("condensed_results.json", "r") as f:
+            condensed_results = json.load(f)
+
+    if new_create is False:
+        result = create_diarized_transcript(audio_file_path, condensed_results, segments)
+    else:
+        result = create_diarized_transcript(audio_file_path, condensed_results, segments)
     with open("transcript.txt", "w") as f:
         f.write(result)
-    # print(result)
+    print(result)
