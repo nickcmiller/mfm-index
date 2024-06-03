@@ -334,7 +334,7 @@ def format_chunks(transcribed_chunks: List[dict], response_type: str="default") 
 
     return segments
 
-def main_transcribe_audio(audio_chunk_paths: List[str], response_type: str="clump"):
+def main_transcribe_audio(audio_chunk_paths: List[str], response_type: str="clump") -> List[dict]:
     """
     Main function to transcribe audio chunks and format the transcription results.
 
