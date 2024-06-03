@@ -5,7 +5,6 @@ import logging
 import time
 from dotenv import load_dotenv
 
-from transcribe_audio import create_audio_chunks, transcribe_chunks
 from pydub import AudioSegment
 from typing import List, Dict
 import json
@@ -19,13 +18,32 @@ HUGGINGFACE_ACCESS_TOKEN = os.getenv("HUGGINGFACE_ACCESS_TOKEN")
 
 def diarize_audio(audio_file_path: str) -> List[dict]:
     """
-    This function diarizes an audio file using the pyannote library.
+    Diarize an audio file using a pretrained speaker diarization pipeline.
+
+    This function takes an audio file path as input and applies a pretrained speaker diarization pipeline to identify and segment the audio based on different speakers. It uses the pyannote.audio library and the "pyannote/speaker-diarization-3.1" pretrained model from Hugging Face.
 
     Args:
         audio_file_path (str): The path to the audio file to be diarized.
 
     Returns:
-        list: A list of dictionaries containing the start time, end time, and speaker label for each segment of the audio file.
+        List[dict]: A list of dictionaries representing the diarized segments. Each dictionary contains the following keys:
+            - "start_time" (float): The start time of the segment in seconds.
+            - "end_time" (float): The end time of the segment in seconds.
+            - "speaker" (str): The identified speaker label for the segment.
+
+    Raises:
+        ValueError: If the pipeline fails to load due to an invalid Hugging Face access token.
+        Exception: If there is an error loading the pipeline, sending it to the GPU (if available), or applying it to the audio file.
+
+    Example:
+        >>> audio_file_path = "path/to/audio/file.wav"
+        >>> diarization_results = diarize_audio(audio_file_path)
+        >>> print(diarization_results)
+        [
+            {"start_time": 0.0, "end_time": 2.5, "speaker": "SPEAKER_00"},
+            {"start_time": 2.5, "end_time": 5.0, "speaker": "SPEAKER_01"},
+            ...
+        ]
     """
     # Record the start time
     start_time = time.time()  
@@ -74,19 +92,69 @@ def diarize_audio(audio_file_path: str) -> List[dict]:
 
     return diarization_results
 
-def condense_diarization_results(diarized_segments: List[dict]) -> List[dict]:
+def diarize_audio_chunks(audio_file_paths: List[str]) -> List[dict]:
 
+    combined_diarization_results = []
+    added_duration = 0
+    for path in audio_file_paths:
+        diarization_chunk_results = diarize_audio(path)
+        for result in diarization_chunk_results:
+            result["start_time"] += added_duration
+            result["end_time"] += added_duration
+            combined_diarization_results.append(result)
+        added_duration = combined_diarization_results[-1]["end_time"]
+    
+    return combined_diarization_results
+    
+def condense_diarization_results(diarized_segments: List[dict]) -> List[dict]:
+    """
+    This function takes a list of diarized segments and condenses them by combining consecutive segments from the same speaker.
+
+    The process is as follows:
+    1. Remove segments that are less than 1 second long.
+    2. Initialize variables for combining consecutive segments:
+        - `condensed_results`: an empty list to store the condensed segments
+        - `current_segment`: a variable to keep track of the current segment being processed
+        - `tolerance`: the maximum allowed gap (in seconds) between consecutive segments to be combined
+    3. Iterate through the diarized segments:
+        - If `current_segment` is None, set it to the current segment.
+        - If the current segment's speaker is the same as the previous segment's speaker and the gap between them is less than or equal to the `tolerance`, update the end time of the `current_segment` to the end time of the current segment.
+        - If the current segment's speaker is different or the gap is greater than the `tolerance`, append the `current_segment` to the `condensed_results` and set the `current_segment` to the current segment.
+    4. After the loop, if the `current_segment` is not None and hasn't been added to the `condensed_results`, append it.
+    5. Return the `condensed_results`.
+
+    Args:
+        diarized_segments (List[dict]): A list of dictionaries representing the diarized segments. Each dictionary should have the following keys:
+            - "start_time": The start time of the segment in seconds.
+            - "end_time": The end time of the segment in seconds.
+            - "speaker": The identified speaker for the segment.
+
+    Returns:
+        List[dict]: A list of dictionaries representing the condensed diarized segments. Each dictionary has the same keys as the input segments.
+
+    Example:
+        >>> diarized_segments = [    
+            {"start_time": 0.0, "end_time": 2.5, "speaker": "SPEAKER_00"},
+            {"start_time": 2.5, "end_time": 5.0, "speaker": "SPEAKER_00"},
+            ...
+        ]
+        >>> condensed_results = condense_diarization_result(diarized_segments)
+        >>> print(condensed_results)
+        [
+            {"start_time": 0.0, "end_time": 5.0, "speaker": "SPEAKER_00"},
+            ...
+        ]   
+    """
     # Remove segments that are less than a second long
     diarized_segments = [segment for segment in diarized_segments if segment['end_time'] - segment['start_time'] >= 1.0]
 
     # Initialize variables for combining consecutive segments
     condensed_results = []
     current_segment = None
-    tolerance = 15
+    tolerance = 3
 
     # Iterate through the data to combine consecutive segments
     for segment in diarized_segments:
-        print(f"Current segment is: {current_segment}\n")
         if current_segment is None:
             current_segment = segment
         elif current_segment["speaker"] == segment["speaker"] and abs(current_segment["end_time"] - segment["start_time"]) <= tolerance:
@@ -101,113 +169,8 @@ def condense_diarization_results(diarized_segments: List[dict]) -> List[dict]:
 
     return condensed_results
 
-def merge_diarization_results_and_transcription(diarization_results: List[dict], segments: List[dict]) -> List[dict]:
-    merged_results = []
-
-    def overlap_percentage(segment, diarization):
-        start = max(segment["start_time"], diarization["start_time"])
-        end = min(segment["end_time"], diarization["end_time"])
-        overlap = max(0, end - start)
-        segment_duration = segment["end_time"] - segment["start_time"]
-        return (overlap / segment_duration) * 100
-
-    for d in diarization_results:
-        combined_text = ""
-        speaker = d["speaker"]
-        used_segments = []
-        for segment in segments:
-
-            overlap = overlap_percentage(segment, d)
-            if overlap > 50:  # Using 50% as the threshold for inclusion
-                combined_text += f"|{segment['text']}|"
-                used_segments.append(segment)
-            elif segment["end_time"] < d["end_time"]:
-                combined_text += f"|{segment['text']}|"
-                used_segments.append(segment)
-            elif segment == segments[-1] and d == diarization_results[-1]:
-                combined_text += f"|{segment['text']}|"
-                used_segments.append(segment)
-        segments = [segment for segment in segments if segment not in used_segments]
-        if len(combined_text) > 0:
-            d["transcription"] = f"{str(d['start_time'])} - {str(d['end_time'])}: {combined_text}"
-            logging.info(f"Transcription for {d['speaker']}: {d['transcription']}")
-            merged_results.append(d)
-        else:
-            logging.info(f"No text found for {d['speaker']}: {d['start_time']} - {d['end_time']}")
-
-    return merged_results
-
-def create_transcript(transcribed_segments: list) -> str:
-    transcript = ""
-    for segment in transcribed_segments:
-        transcript += f"{segment['speaker']}: {segment['transcription']}\n\n"
-    return transcript
-
-def create_diarized_transcript(audio_file_path: str, diarization_results: List[dict]=None, segments: List[dict]=None) -> str:
-
-    if diarization_results is None:
-        diarization_results = diarize_audio(audio_file_path)
-
-    if segments is None:
-        try:
-            segments = transcribe_chunks(audio_file_path, "temp")
-        except Exception as e:
-            logging.error(f"Error during transcription: {e}")
-            raise
-
-    merged_results = merge_diarization_results_and_transcription(diarization_results, segments)
-
-    return create_transcript(merged_results)
-
-if __name__ == "__main__":
-    new_create = True
-    from download_video import yt_dlp_download
-    url = "https://www.youtube.com/watch?v=wz6-0EPBvqE&t=275s&ab_channel=IndianaPacers"
-        
-    if new_create is False:
-        audio_file_path = yt_dlp_download(url)
-        with open("audio_file_path.txt", "w") as f:
-            f.write(audio_file_path)
-    else:
-        with open("audio_file_path.txt", "r") as f:
-            audio_file_path = f.read()
-    print(f"Audio file path: {audio_file_path}")
-
-    if new_create is False:
-        segments = main_transcribe_audio(audio_file_path, response_type="clump")
-        with open("segments.json", "w") as f:
-            json.dump(segments, f, indent=4)
-    else:
-        with open("segments.json", "r") as f:
-            segments = json.load(f)
-
-    if new_create is False:
-        from transcribe_audio import create_audio_chunks
-        audio_chunks = create_audio_chunks(audio_file_path, "temp")
-        diarization_results = []
-
-        for audio_chunk in audio_chunks:
-            # still need to implement iteration
-            diarization_chunk = diarize_audio(audio_chunk)
-            diarization_results.extend(diarization_chunk)
-        with open("diarization_results.json", "w") as f:
-            json.dump(diarization_results, f, indent=4)
-    else:
-        with open("diarization_results.json", "r") as f:
-            diarization_results = json.load(f)
-
-    if new_create is True:
-        condensed_results = condense_diarization_results(diarization_results)
-        with open("condensed_results.json", "w") as f:
-            json.dump(condensed_results, f, indent=4)
-    else:
-        with open("condensed_results.json", "r") as f:
-            condensed_results = json.load(f)
-
-    if new_create is False:
-        result = create_diarized_transcript(audio_file_path, condensed_results, segments)
-    else:
-        result = create_diarized_transcript(audio_file_path, condensed_results, segments)
-    with open("transcript.txt", "w") as f:
-        f.write(result)
-    print(result)
+def diarize_and_condense_audio_chunks(audio_file_paths: List[str]) -> List[dict]:
+    diarized_segments = diarize_audio_chunks(audio_file_paths)
+    condensed_segments = condense_diarization_results(diarized_segments)
+    return condensed_segments
+ 

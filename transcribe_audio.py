@@ -1,5 +1,4 @@
 from groq import Groq
-from pydub import AudioSegment
 import os
 from typing import List, Optional, Dict, Any
 import logging
@@ -70,59 +69,6 @@ def call_groq(audio_file: str) -> Dict[str, Any]:
         logging.error(f"Unexpected error occurred: {e}")
         raise
 
-def create_audio_chunks(audio_file_path: str, temp_dir: str, chunk_size: int=25*60000) -> List[str]:
-    """
-    Splits an audio file into smaller segments or chunks based on a specified duration. This function is useful for processing large audio files incrementally or in parallel, which can be beneficial for tasks such as audio analysis or transcription where handling smaller segments might be more manageable.
-
-    AudioSegment can slice an audio file by specifying the start and end times in milliseconds. This allows you to extract precise segments of the audio without needing to process the entire file at once. For example, `audio[1000:2000]` extracts a segment from the 1-second mark to the 2-second mark of the audio file.
-
-    Args:
-        audio_file (str): The absolute or relative path to the audio file that needs to be chunked. This file should be accessible and readable.
-        
-        chunk_size (int): The length of each audio chunk expressed in milliseconds. This value determines how the audio file will be divided. For example, a `chunk_size` of 1000 milliseconds will split the audio into chunks of 1 second each.
-        
-        temp_dir (str): The directory where the temporary audio chunk files will be stored. This directory will be used to save the output chunk files, and it must have write permissions. If the directory does not exist, it will be created.
-
-    Returns:
-        List[str]: A list containing the file paths of all the audio chunks created. Each path in the list represents a single chunk file stored in the specified `temp_dir`. The files are named sequentially based on their order in the original audio file.
-
-    Raises:
-        FileNotFoundError: If the `audio_file` does not exist or is inaccessible.
-        
-        PermissionError: If the script lacks the necessary permissions to read the `audio_file` or write to the `temp_dir`.
-        ValueError: If `chunk_size` is set to a non-positive value.
-    """
-    os.makedirs(temp_dir, exist_ok=True)
-    file_name = os.path.splitext(os.path.basename(audio_file_path))[0]
-
-    try:
-        audio = AudioSegment.from_file(audio_file_path)
-    except Exception as e:
-        logging.error(f"create_audio_chunks failed to load audio file {audio_file_path}: {e}")
-        logging.error(traceback.format_exc())
-        return []
-
-    start = 0
-    end = chunk_size
-    counter = 0
-    audio_chunk_paths = []
-
-    while start < len(audio):
-        chunk = audio[start:end]
-        chunk_file_path = os.path.join(temp_dir, f"{counter}_{file_name}.mp3")
-        try:
-            chunk.export(chunk_file_path, format="mp3") # Using .mp3 because it's cheaper
-            audio_chunk_paths.append(chunk_file_path)
-        except Exception as e:
-            error_message = f"create_audio_chunks failed to export chunk {counter}: {e}"
-            logging.error(error_message)
-            logging.error(traceback.format_exc())
-            raise error_message
-        start += chunk_size
-        end += chunk_size
-        counter += 1
-    return audio_chunk_paths
-
 def transcribe_chunks(audio_chunk_paths: List[str], temp_dir: str) -> List[dict]:
 
     transcribed_chunks = []
@@ -132,6 +78,7 @@ def transcribe_chunks(audio_chunk_paths: List[str], temp_dir: str) -> List[dict]
             response = call_groq(chunk_path)
         except Exception as e:
             logging.error(f"transcribe_chunks failed to call_groq for {chunk_path}: {e}")
+            logging.error(traceback.format_exc())
             response = None
 
         transcribed_chunk = {
@@ -139,8 +86,6 @@ def transcribe_chunks(audio_chunk_paths: List[str], temp_dir: str) -> List[dict]
             "duration": response.duration
         }
         transcribed_chunks.append(transcribed_chunk)
-
-        shutil.rmtree(temp_dir)
     
     return transcribed_chunks
 
@@ -213,50 +158,12 @@ def format_chunks(transcribed_chunks: List[dict], response_type: str="default") 
 
     return segments
 
-def main_transcribe_audio(audio_file_path: str, response_type: str="clump"):
+def main_transcribe_audio(audio_chunk_paths: List[str], response_type: str="clump"):
     
-    audio_chunks = create_audio_chunks(audio_file_path, "temp")
-    transcribed_chunks = transcribe_chunks(audio_chunks, "temp")
+    transcribed_chunks = transcribe_chunks(audio_chunk_paths, "temp")
     segments = format_chunks(transcribed_chunks, response_type=response_type)
     
     return segments
-
-
-
-if __name__ == "__main__":
-    new_create = True
-    from download_video import yt_dlp_download
-    url = "https://www.youtube.com/watch?v=wz6-0EPBvqE&t=275s&ab_channel=IndianaPacers"
-    
-    if new_create is False:
-        audio_file_path = yt_dlp_download(url)
-        with open("audio_file_path.txt", "w") as f:
-            f.write(audio_file_path)
-    else:
-        with open("audio_file_path.txt", "r") as f:
-            audio_file_path = f.read()
-    print(f"Audio file path: {audio_file_path}")
-
-    if new_create is False:
-        audio_chunks = create_audio_chunks(audio_file_path, "temp")
-        transcribed_chunks = transcribe_chunks(audio_chunks, "temp")
-        output_file = "transcribed_chunks.json"
-        import json
-        with open(output_file, "w") as f:
-            json.dump(transcribed_chunks, f, indent=4)
-    else:
-        with open("transcribed_chunks.json", "r") as f:
-            transcribed_chunks = json.load(f)
-            
-    
-    if new_create is False:
-        segments = format_chunks(transcribed_chunks, response_type="clump")
-        output_file = "segments.json"
-        with open(output_file, "w") as f:
-            json.dump(segments, f, indent=4)
-    else:
-        with open("segments.json", "r") as f:
-            segments = json.load(f)
             
 
 
