@@ -93,7 +93,31 @@ def diarize_audio(audio_file_path: str) -> List[dict]:
     return diarization_results
 
 def diarize_audio_chunks(audio_file_paths: List[str]) -> List[dict]:
+    """
+    Diarizes a list of audio chunks and returns the combined diarization results.
 
+    This function takes a list of file paths to audio chunks and performs speaker diarization on each chunk using the `diarize_audio` function. The diarization results from each chunk are then combined into a single list, with the start and end times adjusted based on the duration of the previous chunks.
+
+    Args:
+        audio_file_paths (List[str]): A list of file paths to the audio chunks to be diarized.
+
+    Returns:
+        List[dict]: A list of dictionaries representing the combined diarization results. Each dictionary contains the following keys:
+            - "start_time" (float): The start time of the speaker segment in seconds, adjusted based on the duration of previous chunks.
+            - "end_time" (float): The end time of the speaker segment in seconds, adjusted based on the duration of previous chunks.
+            - "speaker" (str): The identified speaker label for the segment.
+
+    Example:
+        >>> audio_file_paths = ["01_chunk.mp3", "02_chunk.mp3", "03_chunk.mp3"]
+        >>> diarization_results = diarize_audio_chunks(audio_file_paths)
+        >>> print(diarization_results)
+        [
+            {"start_time": 0.0, "end_time": 5.2, "speaker": "SPEAKER_00"},
+            {"start_time": 5.2, "end_time": 12.8, "speaker": "SPEAKER_01"},
+            {"start_time": 12.8, "end_time": 18.5, "speaker": "SPEAKER_00"},
+            ...
+        ]
+    """
     combined_diarization_results = []
     added_duration = 0
     for path in audio_file_paths:
@@ -170,7 +194,30 @@ def condense_diarization_results(diarized_segments: List[dict]) -> List[dict]:
     return condensed_results
 
 def diarize_and_condense_audio_chunks(audio_file_paths: List[str]) -> List[dict]:
+    """
+    Diarizes and condenses the audio chunks.
+
+    This function takes a list of file paths to audio chunks and performs the following steps:
+    1. Diarizes the audio chunks using the `diarize_audio_chunks` function. This function uses a speaker diarization model (PyAnnote) to identify and segment the audio based on different speakers.
+    2. Condenses the diarized segments using the `condense_diarization_results` function. This function combines consecutive segments from the same speaker to create a more condensed representation of the diarization results.
+    3. Returns the condensed diarization segments.
+
+    Args:
+        audio_file_paths (List[str]): A list of file paths to the audio chunks.
+
+    Returns:
+        List[dict]: A list of dictionaries representing the condensed diarized segments. Each dictionary likely contains information such as the start time, end time, and speaker for each segment.
+
+    Example:
+    >>> audio_file_paths = ["01_chunk.mp3", "02_chunk.mp3", "03_chunk.mp3"]
+    >>> diarized_and_condensed_segments = diarize_and_condense_audio_chunks(audio_file_paths)
+    >>> print(diarized_and_condensed_segments)
+    [
+        {"start_time": 0.0, "end_time": 5.0, "speaker": "SPEAKER_00"},
+        {"start_time": 5.0, "end_time": 12.5, "speaker": "SPEAKER_01"},
+        {"start_time": 12.5, "end_time": 20.0, "speaker": "SPEAKER_00"}
+    ]
+    """
     diarized_segments = diarize_audio_chunks(audio_file_paths)
     condensed_segments = condense_diarization_results(diarized_segments)
     return condensed_segments
- 

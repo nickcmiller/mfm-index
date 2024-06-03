@@ -70,7 +70,7 @@ def call_groq(audio_file: str) -> Dict[str, Any]:
         raise
 
 def transcribe_chunks(audio_chunk_paths: List[str], temp_dir: str) -> List[dict]:
-
+    
     transcribed_chunks = []
 
     for chunk_path in audio_chunk_paths:

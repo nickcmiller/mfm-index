@@ -31,6 +31,19 @@ def create_audio_chunks(audio_file_path: str, temp_dir: str, chunk_size: int=25*
         
         PermissionError: If the script lacks the necessary permissions to read the `audio_file` or write to the `temp_dir`.
         ValueError: If `chunk_size` is set to a non-positive value.
+
+    Example: 
+        >>> audio_file_path = "path/to/audio/file.mp3"
+        >>> temp_dir = "path/to/temp/directory"
+        >>> chunk_size = 30000  # 30 seconds
+        >>> audio_chunk_paths = create_audio_chunks(audio_file_path, temp_dir, chunk_size)
+        >>> print(audio_chunk_paths)
+        [
+            "path/to/temp/directory/0_chunk.mp3",
+            "path/to/temp/directory/1_chunk.mp3",
+            "path/to/temp/directory/2_chunk.mp3",
+            ...
+        ]
     """
     os.makedirs(temp_dir, exist_ok=True)
     file_name = os.path.splitext(os.path.basename(audio_file_path))[0]
@@ -191,12 +204,73 @@ def merge_diarization_and_transcription(diarization_results: List[dict], transcr
     return merged_segments
 
 def create_transcript(merged_segments: List[dict]) -> str:
+    """
+    Create a transcript from the merged segments.
+
+    This function takes the merged segments, which contain both diarization and transcription information, and generates a formatted transcript. The transcript is created by iterating over each segment and concatenating the speaker label and the corresponding transcription text. The resulting transcript is a string where each segment is represented as:
+
+    SPEAKER_LABEL: TRANSCRIPTION_TEXT
+
+    Args:
+        merged_segments (List[dict]): A list of dictionaries representing the merged segments. Each dictionary should have the following keys:
+            - "speaker" (str): The speaker label for the segment.
+            - "transcription" (str): The transcription text for the segment.
+
+    Returns:
+        str: The generated transcript as a string.
+
+    Example:
+        >>> merged_segments = [
+                {
+                    "speaker": "SPEAKER_00",
+                    "transcription": "Hello, how are you?"
+                },
+                {
+                    "speaker": "SPEAKER_01", 
+                    "transcription": "I'm doing well, thanks for asking!"
+                },
+                {
+                    "speaker": "SPEAKER_00",
+                    "transcription": "That's great to hear."
+                }
+            ]
+        >>> transcript = create_transcript(merged_segments)
+        >>> print(transcript)
+        SPEAKER_00: Hello, how are you?
+
+        SPEAKER_01: I'm doing well, thanks for asking!
+
+        SPEAKER_00: That's great to hear.
+
+    """
     transcript = ""
     for segment in merged_segments:
         transcript += f"{segment['speaker']}: {segment['transcription']}\n\n"
     return transcript
 
 def main(youtube_url: str):
+    """
+    Main function that orchestrates the entire process of downloading a YouTube video, splitting it into audio chunks, transcribing and diarizing the chunks, merging the results, and creating a final transcript.
+
+    Args:
+        youtube_url (str): The URL of the YouTube video to be processed.
+
+    Returns:
+        str: The final transcript of the processed YouTube video.
+
+    The main function performs the following steps:
+    1. Downloads the audio from the specified YouTube video using the `yt_dlp_download` function.
+    2. Creates a temporary directory to store the audio chunks.
+    3. Splits the downloaded audio into smaller chunks using the `create_audio_chunks` function.
+    4. Transcribes the audio chunks using the `main_transcribe_audio` function.
+    5. Diarizes the audio chunks using the `diarize_and_condense_audio_chunks` function.
+    6. Deletes the temporary directory containing the audio chunks.
+    7. Merges the diarization and transcription results using the `merge_diarization_and_transcription` function.
+    8. Creates the final transcript using the `create_transcript` function.
+    9. Returns the final transcript.
+
+    This function serves as the entry point for the entire process, coordinating the various steps involved in processing a YouTube video and generating a transcript with speaker information.
+    """
     # Download the audio file
     audio_file_path =  yt_dlp_download(youtube_url)
 
@@ -229,50 +303,3 @@ if __name__ == "__main__":
     with open("transcript.txt", "w") as f:
         f.write(transcript)
     print(transcript)
-
-    # if True:
-    #     audio_file_path =  yt_dlp_download(youtube_url)
-    #     audio_chunk_paths = create_audio_chunks(audio_file_path, "temp", 5*60*1000)
-    #     with open("audio_chunk_paths.json", "w") as f:
-    #         json.dump(audio_chunk_paths, f, indent=4)
-    # else:
-    #     with open("audio_chunk_paths.json", "r") as f:
-    #         audio_chunk_paths = json.load(f)
-    
-    # if True:
-    #     diarization_results = diarize_and_condense_audio_chunks(audio_chunk_paths)
-    #     with open("diarization_results.json", "w") as f:
-    #         json.dump(diarization_results, f, indent=4)
-    # else:
-    #     with open("diarization_results.json", "r") as f:
-    #         diarization_results = json.load(f)
-
-    # if True:
-    #     segments = main_transcribe_audio(audio_chunk_paths, "temp")
-    #     with open("segments.json", "w") as f:
-    #         json.dump(segments, f, indent=4)
-    # else:
-    #     with open("segments.json", "r") as f:
-    #         segments = json.load(f)
-
-    # if True:
-    #     merged_results = merge_diarization_and_transcription(diarization_results, segments)
-    #     with open("merged_results.json", "w") as f:
-    #         json.dump(merged_results, f, indent=4)
-    # else:
-    #     with open("merged_results.json", "r") as f:
-    #         merged_results = json.load(f)
-
-    # if True:
-    #     transcript = create_transcript(merged_results)
-    #     with open("transcript.txt", "w") as f:
-    #         f.write(transcript)
-    # else:
-    #     with open("transcript.txt", "r") as f:
-    #         transcript = f.read()
-
-    # print(f"audio_chunk_paths: {audio_chunk_paths}\n\n")
-    # print(f"diarization_results: {diarization_results}\n\n")
-    # print(f"segments: {segments}\n\n")
-    # print(f"merged_results: {merged_results}\n\n")
-    # print(f"transcript: {transcript}\n\n")
