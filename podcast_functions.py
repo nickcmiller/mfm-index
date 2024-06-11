@@ -96,7 +96,9 @@ def download_podcast_audio(
     if file_path is None:
         file_path = os.getcwd() + "/"
     
-    file_name = file_path+title+".mp3"
+    safe_title = ''.join(char for char in title if char.isalnum() or char in " -_")
+    title_with_underscores = safe_title.replace(" ", "_")
+    file_name = os.path.join(file_path, title_with_underscores + ".mp3")
     
     response = requests.get(audio_url)
     

@@ -30,11 +30,11 @@ def groq_text_response(
         Example:
             message_list = [
                 {
-                    "role": "user",
-                    "content": "Explain the importance of fast language models",
+                    "role": "system",
+                    "content": "You are a helpful assistant that identifies speakers in a podcast and replaces their names with placeholders.",
                 }
             ]
-            >>> groq_text_response(message_list)
+            >>> groq_text_response("Explain the importance of fast language models", history_messages=message_list)
 
             "Fast language models are important because they can be used to generate text in real-time."
     """
@@ -65,6 +65,28 @@ def openai_text_response(
     history_messages: List[dict] = [],
     model: str = "gpt-4o"
 ) -> str:
+    """
+        This function gets a text response from OpenAI. 
+
+        Arguments:
+            prompt: str - The prompt to send to the model.
+            history_messages: List[dict] - The messages to send to the model.
+            model: str - The model to use.
+
+        Returns:
+            str - The text response from the model.
+
+        Example:
+            message_list = [
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that identifies speakers in a podcast and replaces their names with placeholders.",
+                }
+            ]
+            >>> openai_text_response("Explain the importance of fast language models", history_messages=message_list)
+
+            "Fast language models are important because they can be used to generate text in real-time."
+    """
     client = OpenAI()
 
     messages = history_messages

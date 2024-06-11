@@ -414,12 +414,16 @@ def transcribe_audio_assemblyai(
     aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 
     config = aai.TranscriptionConfig(speaker_labels=True)
-
-    transcriber = aai.Transcriber()
-    response = transcriber.transcribe(
-        audio_file_path,
-        config=config
-    )
+    try:
+        transcriber = aai.Transcriber()
+        response = transcriber.transcribe(
+            audio_file_path,
+            config=config
+        )
+    except Exception as e:
+        logging.error(f"Failed to transcribe audio: {e}")
+        traceback.print_exc()
+        raise e
 
     return response
 
@@ -447,10 +451,6 @@ def identify_speakers(
     prompt: str = None
 ) -> dict:
 
-    # Trim the transcript to the first 50 lines
-    lines = transcript.split('\n')[5:55]
-    trimmed_transcript = ''.join(lines)
-
     if system_prompt is None:
         system_prompt = """
 You only return properly formatted key-value store. 
@@ -470,10 +470,7 @@ Example 2:
     "Speaker B": "FirstName LastName"
 }
     
-        """ 
-
-    
-    
+"""   
     if prompt is None:
         prompt = f"""
 Using the context of the conversation in the transcript and the background provided by the summary, identify the speakers in the podcast.
@@ -482,11 +479,8 @@ Return the speakers in a dictionary.
 
 Summary of the podcast:\n {summary}
 
-Transcript of the podcast:\n {trimmed_transcript}
+Transcript of the podcast:\n {transcript}
 """
-
-    print(f"\n\nSystem Prompt: {system_prompt}\n\n")
-    print(f"\n\nPrompt: {prompt}\n\n")
 
     system_instructions = {"role": "system", "content": system_prompt}
 
@@ -515,73 +509,77 @@ Transcript of the podcast:\n {trimmed_transcript}
         traceback.print_exc()
         raise ValueError("Failed to obtain a valid dictionary response.")
 
-
 def replace_speakers(
     transcript: str,
     response_dict: dict
 ) -> str:
-
     speaker_transcript = transcript
-    try:
-        for key in response_dict:
+    for key in response_dict:
+        try:
             speaker_transcript = speaker_transcript.replace(key, response_dict[key])
-        return speaker_transcript
-    except:
-        exception_message = f"Failed to replace key: {key} with value: {response_dict[key]} in transcript"
-        logging.error(exception_message)
-        traceback.print_exc()
-        raise Exception(exception_message)
+        except:
+            exception_message = f"Failed to replace key: {key} with value: {response_dict[key]} in transcript"
+            logging.error(exception_message)
+            traceback.print_exc()
+            raise Exception(exception_message)
+    return speaker_transcript
 
+def transcribe_audio_assemblyai_with_replaced_speakers(
+    audio_file_path: str,
+    audio_summary: str,
+    first_host_speaker: str = None
+) -> aai.transcriber.Transcript:
+
+    if first_host_speaker is not None:
+        audio_summary = f"{audio_summary} \n\nThe first host to speak is {first_host_speaker}."
+
+    transcribed_audio = transcribe_audio_assemblyai(audio_file_path)
     
+    assemblyai_transcript = get_transcript_assemblyai(transcribed_audio)
+    
+    speaker_dict = identify_speakers(audio_summary, assemblyai_transcript)
+    
+    assemblyai_transcript_with_replaced_speakers = replace_speakers(assemblyai_transcript, speaker_dict)
+    
+    return assemblyai_transcript_with_replaced_speakers
+
 
 if __name__ == "__main__":
     from podcast_functions import return_entries_from_feed, download_podcast_audio
     
-    if True:
+    if False:
         feed_url = "https://feeds.megaphone.fm/HS2300184645"
         entries = return_entries_from_feed(feed_url)
-        first_entry = entries[0]  
+        first_entry = entries[3]  
         print(json.dumps(first_entry, indent=4))
         audio_file_path = download_podcast_audio(first_entry["url"], first_entry["title"])
+        print(f"AUDIO FILE PATH: {audio_file_path}")
         with open('audio_file_path.txt', 'w') as f:
             f.write(audio_file_path)
     else:
         with open('audio_file_path.txt', 'r') as f:
             audio_file_path = f.read()
-
-    if False:
-        response = transcribe_audio_assemblyai(audio_file_path)
-        assemblyai_transcript = get_transcript_assemblyai(response)
-
-        with open('assemblyai_transcript.txt', 'w') as f:
-            f.write(assemblyai_transcript)
-    else:
-        with open('assemblyai_transcript.txt', 'r') as f:
-            assemblyai_transcript = f.read()
-        # Check if newlines are present
-        if '\n' in assemblyai_transcript:
-            print("Newlines are present in the transcript.")
-        else:
-            print("Newlines are missing in the transcript.")
         
-    if False:
+    if True:
         feed_url = "https://feeds.megaphone.fm/HS2300184645"
         entry = return_entries_from_feed(feed_url)[0]
         feed_summary = entry["feed_summary"]
         summary = entry["summary"]
 
-        system_prompt = """
-
-        """
-
         summary_prompt = f"""
+        Use the descriptions to summarize the podcast.\n
         
+        Podcast Description:\n {summary} \n
 
-        Summary of the podcast:\n {summary}
+        Feed Description:\n {feed_summary} \n\n
+
+        Describe the hosts and the guests.
         """
+
+        generated_summary = groq_text_response(summary_prompt)
         
-        speaker_dict = identify_speakers(summary, assemblyai_transcript)
-        print(f"\n\nSPEAKER DICT: {speaker_dict}\n\n")
-        replaced_transcript = replace_speakers(assemblyai_transcript, speaker_dict)
-        print(replaced_transcript[:1000])
+        transcribed_audio_with_replaced_speakers = transcribe_audio_assemblyai_with_replaced_speakers(audio_file_path, generated_summary, "Sam Parr")
+
+        with open('replaced_transcript.txt', 'w') as f:
+            f.write(transcribed_audio_with_replaced_speakers)
         
