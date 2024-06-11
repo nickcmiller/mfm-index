@@ -14,7 +14,9 @@ import assemblyai as aai
 logging.basicConfig(level=logging.INFO)
 load_dotenv('.env')
 
-def call_groq(audio_file: str) -> Dict[str, Any]:
+def call_groq(
+    audio_file: str
+) -> Dict[str, Any]:
     """
     This function transcribes an audio file using the Groq library.
 
@@ -71,7 +73,10 @@ def call_groq(audio_file: str) -> Dict[str, Any]:
         logging.error(f"Unexpected error occurred: {e}")
         raise
 
-def transcribe_chunks(audio_chunk_paths: List[str], temp_dir: str) -> List[dict]:
+def transcribe_chunks(
+    audio_chunk_paths: List[str], 
+    temp_dir: str
+) -> List[dict]:
     """
     Transcribes a list of audio chunks and returns the transcription results.
 
@@ -128,7 +133,10 @@ def transcribe_chunks(audio_chunk_paths: List[str], temp_dir: str) -> List[dict]
     
     return transcribed_chunks
 
-def clump_response(segments: str, added_duration: float=0.0) -> List[dict]:
+def clump_response(
+    segments: List[dict], 
+    added_duration: float=0.0
+) -> List[dict]:
     """
     Clumps together transcription segments into longer segments based on punctuation and duration.
 
@@ -211,7 +219,10 @@ def clump_response(segments: str, added_duration: float=0.0) -> List[dict]:
 
     return formatted_segments
 
-def default_response(segments: str, added_duration: float=0.0) -> List[dict]:
+def default_response(
+    segments: List[dict], 
+    added_duration: float=0.0
+) -> List[dict]:
     """
     This function takes a list of segments and an optional added_duration, and returns a list of formatted segments.
 
@@ -271,7 +282,10 @@ def default_response(segments: str, added_duration: float=0.0) -> List[dict]:
 
     return formatted_segments
 
-def format_chunks(transcribed_chunks: List[dict], response_type: str="default") -> List[dict]:
+def format_chunks(
+    transcribed_chunks: List[dict], 
+    response_type: str="default"
+) -> List[dict]:
     """
     Format the transcribed chunks based on the specified response type.
 
@@ -336,23 +350,26 @@ def format_chunks(transcribed_chunks: List[dict], response_type: str="default") 
 
     return segments
 
-def main_transcribe_audio(audio_chunk_paths: List[str], response_type: str="clump") -> List[dict]:
+def main_transcribe_audio(
+    audio_chunk_paths: List[str], 
+    response_type: str="clump"
+) -> List[dict]:
     """
-    Main function to transcribe audio chunks and format the transcription results.
+        Main function to transcribe audio chunks and format the transcription results.
 
-    This function takes a list of file paths to audio chunks and a response type (default is "clump"). It performs the following steps:
-    1. Transcribes the audio chunks using the `transcribe_chunks` function.
-    2. Formats the transcribed chunks based on the specified response type using the `format_chunks` function.
-    3. Returns the formatted transcription segments.
+        This function takes a list of file paths to audio chunks and a response type (default is "clump"). It performs the following steps:
+        1. Transcribes the audio chunks using the `transcribe_chunks` function.
+        2. Formats the transcribed chunks based on the specified response type using the `format_chunks` function.
+        3. Returns the formatted transcription segments.
 
-    Args:
-        audio_chunk_paths (List[str]): A list of file paths to the audio chunks to be transcribed.
-        response_type (str, optional): The type of response formatting to apply. Default is "clump".
+        Args:
+            audio_chunk_paths (List[str]): A list of file paths to the audio chunks to be transcribed.
+            response_type (str, optional): The type of response formatting to apply. Default is "clump".
 
-    Returns:
-        List[dict]: A list of dictionaries representing the formatted transcription segments. The format of the segments depends on the `response_type` argument.
+        Returns:
+            List[dict]: A list of dictionaries representing the formatted transcription segments. The format of the segments depends on the `response_type` argument.
 
-    Example:
+        Example:
         >>> audio_chunk_paths = ["01_chunk.mp3", "02_chunk.mp3"]
         >>> response_type = "clump"
         >>> transcription_segments = main_transcribe_audio(audio_chunk_paths, response_type)
@@ -380,11 +397,18 @@ def main_transcribe_audio(audio_chunk_paths: List[str], response_type: str="clum
     
     return segments
 
-def transcribe_audio_assemblyai(audio_file_path: str) -> aai.transcriber.Transcript:
+def transcribe_audio_assemblyai(
+    audio_file_path: str
+) -> aai.transcriber.Transcript:
     """
-    This function transcribes an audio file using the AssemblyAI library.
-    """
+        This function transcribes an audio file using the AssemblyAI library.
 
+        Arguments:
+            audio_file_path: str - The path to the audio file to transcribe.
+
+        Returns:
+        aai.transcriber.Transcript - The transcription response from AssemblyAI.
+    """
     aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 
     config = aai.TranscriptionConfig(speaker_labels=True)
@@ -397,7 +421,18 @@ def transcribe_audio_assemblyai(audio_file_path: str) -> aai.transcriber.Transcr
 
     return response
 
-def get_transcript(response: aai.transcriber.Transcript):
+def get_transcript_assemblyai(
+    response: aai.transcriber.Transcript
+) -> str:
+    """
+        This function gets the transcript from the AssemblyAI response.
+
+        Arguments:
+            response: aai.transcriber.Transcript - The response from the AssemblyAI transcriber.
+
+        Returns:
+            str - The transcript of the audio.
+    """
     transcript = ""
     for utterance in response.utterances:
         transcript += f"Speaker {utterance.speaker}: {utterance.text}\n\n"
