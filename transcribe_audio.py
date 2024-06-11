@@ -9,6 +9,8 @@ import time
 import httpx
 import json
 
+import assemblyai as aai
+
 logging.basicConfig(level=logging.INFO)
 load_dotenv('.env')
 
@@ -377,6 +379,48 @@ def main_transcribe_audio(audio_chunk_paths: List[str], response_type: str="clum
     segments = format_chunks(transcribed_chunks, response_type=response_type)
     
     return segments
-            
 
+def transcribe_audio_assemblyai(audio_file_path: str) -> aai.transcriber.Transcript:
+    """
+    This function transcribes an audio file using the AssemblyAI library.
+    """
 
+    aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
+
+    config = aai.TranscriptionConfig(speaker_labels=True)
+
+    transcriber = aai.Transcriber()
+    response = transcriber.transcribe(
+        audio_file_path,
+        config=config
+    )
+
+    return response
+
+def get_transcript(response: aai.transcriber.Transcript):
+    transcript = ""
+    for utterance in response.utterances:
+        transcript += f"Speaker {utterance.speaker}: {utterance.text}\n\n"
+    return transcript
+
+if __name__ == "__main__":
+    from download_video import yt_dlp_download
+
+    if False:
+        audio_file_path = yt_dlp_download("https://www.youtube.com/watch?v=5tre0ceg2bs&t=456s&ab_channel=MyFirstMillion")
+        with open('audio_file_path', 'w') as f:
+            f.write(audio_file_path)
+    else:
+        with open('audio_file_path', 'r') as f:
+            audio_file_path = f.read()
+
+    if True:
+        response = transcribe_audio_assemblyai(audio_file_path)
+        assemblyai_transcript = get_transcript(response)
+
+        with open('assemblyai_transcript.txt', 'w') as f:
+            f.write(assemblyai_transcript)
+    else:
+        with open('assemblyai_transcript.txt', 'r') as f:
+            assemblyai_transcript = f.read()
+        

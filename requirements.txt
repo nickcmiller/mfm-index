@@ -1,3 +1,5 @@
+assemblyai
+feedparser
 groq
 httpx
 pyannote.audio

@@ -50,7 +50,3 @@ def yt_dlp_download(yt_url:str, output_path:str = None) -> str:
         logging.error(f"An unexpected error occurred with yt_dlp_download: {e}")
         logging.error(traceback.format_exc())
         raise
-
-if __name__ == "__main__":
-    yt_dlp_download("https://www.youtube.com/watch?v=MyW9fli4JXM&ab_channel=KRON4")
-
