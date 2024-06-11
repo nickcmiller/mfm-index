@@ -1,4 +1,6 @@
 from groq import Groq
+from text_models import groq_text_response, openai_text_response
+
 import os
 from typing import List, Optional, Dict, Any
 import logging
@@ -438,24 +440,148 @@ def get_transcript_assemblyai(
         transcript += f"Speaker {utterance.speaker}: {utterance.text}\n\n"
     return transcript
 
-if __name__ == "__main__":
-    from download_video import yt_dlp_download
+def identify_speakers(
+    summary: str,
+    transcript: str,
+    system_prompt: str = None,
+    prompt: str = None
+) -> dict:
 
-    if False:
-        audio_file_path = yt_dlp_download("https://www.youtube.com/watch?v=5tre0ceg2bs&t=456s&ab_channel=MyFirstMillion")
-        with open('audio_file_path', 'w') as f:
+    # Trim the transcript to the first 50 lines
+    lines = transcript.split('\n')[5:55]
+    trimmed_transcript = ''.join(lines)
+
+    if system_prompt is None:
+        system_prompt = """
+You only return properly formatted key-value store. 
+The output should Python eval to a dictionary. type(eval(response)) == dict
+
+Output Examples
+
+Example 1:
+{
+    "Speaker A": "FirstName LastName", 
+    "Speaker B": "FirstName LastName"
+}
+
+Example 2:
+{
+    "Speaker A": "FirstName LastName", 
+    "Speaker B": "FirstName LastName"
+}
+    
+        """ 
+
+    
+    
+    if prompt is None:
+        prompt = f"""
+Using the context of the conversation in the transcript and the background provided by the summary, identify the speakers in the podcast.
+
+Return the speakers in a dictionary.
+
+Summary of the podcast:\n {summary}
+
+Transcript of the podcast:\n {trimmed_transcript}
+"""
+
+    print(f"\n\nSystem Prompt: {system_prompt}\n\n")
+    print(f"\n\nPrompt: {prompt}\n\n")
+
+    system_instructions = {"role": "system", "content": system_prompt}
+
+    max_tries = 5
+    for attempt in range(max_tries):
+        response = openai_text_response(prompt, [system_instructions])
+        logging.info(f"Response {attempt}: {response}")
+        try:
+            response_dict = eval(response)
+            if isinstance(response_dict, dict):
+                return response_dict
+        except SyntaxError:
+            logging.info(f"Normal eval failed. Attempting to clean and re-evaluate.")
+            # Attempt to clean the response and re-evaluate
+            try:
+                # Remove triple backticks, "python" keyword, and any leading/trailing whitespace
+                cleaned_response = response.replace('```python', '').replace('```', '').strip()
+                response_dict = eval(cleaned_response)
+                if isinstance(response_dict, dict):
+                    return response_dict
+            except Exception as e:
+                logging.info(f"Failed to evaluate cleaned response: {e}")
+            logging.info(f"Attempt {attempt + 1} failed to evaluate response as a dictionary. {max_tries - attempt - 1} tries left.")
+    else:
+        logging.error("Failed to obtain a valid dictionary response after maximum attempts.")
+        traceback.print_exc()
+        raise ValueError("Failed to obtain a valid dictionary response.")
+
+
+def replace_speakers(
+    transcript: str,
+    response_dict: dict
+) -> str:
+
+    speaker_transcript = transcript
+    try:
+        for key in response_dict:
+            speaker_transcript = speaker_transcript.replace(key, response_dict[key])
+        return speaker_transcript
+    except:
+        exception_message = f"Failed to replace key: {key} with value: {response_dict[key]} in transcript"
+        logging.error(exception_message)
+        traceback.print_exc()
+        raise Exception(exception_message)
+
+    
+
+if __name__ == "__main__":
+    from podcast_functions import return_entries_from_feed, download_podcast_audio
+    
+    if True:
+        feed_url = "https://feeds.megaphone.fm/HS2300184645"
+        entries = return_entries_from_feed(feed_url)
+        first_entry = entries[0]  
+        print(json.dumps(first_entry, indent=4))
+        audio_file_path = download_podcast_audio(first_entry["url"], first_entry["title"])
+        with open('audio_file_path.txt', 'w') as f:
             f.write(audio_file_path)
     else:
-        with open('audio_file_path', 'r') as f:
+        with open('audio_file_path.txt', 'r') as f:
             audio_file_path = f.read()
 
-    if True:
+    if False:
         response = transcribe_audio_assemblyai(audio_file_path)
-        assemblyai_transcript = get_transcript(response)
+        assemblyai_transcript = get_transcript_assemblyai(response)
 
         with open('assemblyai_transcript.txt', 'w') as f:
             f.write(assemblyai_transcript)
     else:
         with open('assemblyai_transcript.txt', 'r') as f:
             assemblyai_transcript = f.read()
+        # Check if newlines are present
+        if '\n' in assemblyai_transcript:
+            print("Newlines are present in the transcript.")
+        else:
+            print("Newlines are missing in the transcript.")
+        
+    if False:
+        feed_url = "https://feeds.megaphone.fm/HS2300184645"
+        entry = return_entries_from_feed(feed_url)[0]
+        feed_summary = entry["feed_summary"]
+        summary = entry["summary"]
+
+        system_prompt = """
+
+        """
+
+        summary_prompt = f"""
+        
+
+        Summary of the podcast:\n {summary}
+        """
+        
+        speaker_dict = identify_speakers(summary, assemblyai_transcript)
+        print(f"\n\nSPEAKER DICT: {speaker_dict}\n\n")
+        replaced_transcript = replace_speakers(assemblyai_transcript, speaker_dict)
+        print(replaced_transcript[:1000])
         

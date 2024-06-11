@@ -1,10 +1,12 @@
 import feedparser
+
 import requests
 import urllib
 import logging
 import traceback
-
+import os
 import json
+from typing import List
 
 def parse_feed(
     feed_url: str
@@ -64,9 +66,16 @@ def extract_metadata_from_feed(
     
     for entry in feed.entries:
         entry_metadata = extract_entry_metadata(entry)
+        entry_metadata["feed_summary"] = feed.feed.summary
         entries.append(entry_metadata)
     
     return entries
+
+def return_entries_from_feed(
+    feed_url: str
+) -> List[dict]:
+    feed = parse_feed(feed_url)
+    return extract_metadata_from_feed(feed)
 
 def download_podcast_audio(
     audio_url: str, 
@@ -100,9 +109,13 @@ def download_podcast_audio(
 
     return file_name
 
+
+
 if __name__ == "__main__":
     feed_url = "https://feeds.megaphone.fm/HS2300184645"
     feed = parse_feed(feed_url)
-    entries = extract_metadata_from_feed(feed)
-    print(json.dumps(entries, indent=4))
-    print(f"Entries: {len(entries)}")
+    print(feed.feed.keys())
+    print(feed.feed.summary)
+    # entries = extract_metadata_from_feed(feed)
+    # print(json.dumps(entries, indent=4))
+    # print(f"Entries: {len(entries)}")
