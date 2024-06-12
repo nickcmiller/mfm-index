@@ -110,14 +110,3 @@ def download_podcast_audio(
         logging.error(f"Failed to download the file: {title}")
 
     return file_name
-
-
-
-if __name__ == "__main__":
-    feed_url = "https://feeds.megaphone.fm/HS2300184645"
-    feed = parse_feed(feed_url)
-    print(feed.feed.keys())
-    print(feed.feed.summary)
-    # entries = extract_metadata_from_feed(feed)
-    # print(json.dumps(entries, indent=4))
-    # print(f"Entries: {len(entries)}")

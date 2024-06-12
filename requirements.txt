@@ -8,6 +8,7 @@ pydub
 torch
 torchaudio
 torchvision
+trufflepig-py
 yt_dlp
 
 openai

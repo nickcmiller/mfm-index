@@ -427,32 +427,10 @@ def transcribe_audio_assemblyai(
 
     return response
 
-def get_transcript_assemblyai(
-    response: aai.transcriber.Transcript
-) -> str:
-    """
-        This function gets the transcript from the AssemblyAI response.
 
-        Arguments:
-            response: aai.transcriber.Transcript - The response from the AssemblyAI transcriber.
+# AssemblyAI Functions
 
-        Returns:
-            str - The transcript of the audio.
-    """
-    transcript = ""
-    for utterance in response.utterances:
-        transcript += f"Speaker {utterance.speaker}: {utterance.text}\n\n"
-    return transcript
-
-def identify_speakers(
-    summary: str,
-    transcript: str,
-    system_prompt: str = None,
-    prompt: str = None
-) -> dict:
-
-    if system_prompt is None:
-        system_prompt = """
+default_system_prompt = """
 You only return properly formatted key-value store. 
 The output should Python eval to a dictionary. type(eval(response)) == dict
 
@@ -470,17 +448,71 @@ Example 2:
     "Speaker B": "FirstName LastName"
 }
     
-"""   
-    if prompt is None:
-        prompt = f"""
-Using the context of the conversation in the transcript and the background provided by the summary, identify the speakers in the podcast.
+""" 
 
-Return the speakers in a dictionary.
+def default_prompt(
+    summary: str,
+    transcript: str
+):
+    response = f"""
+Using the context of the conversation in the transcript and the background provided by the summary, identify the speakers in the podcast.
 
 Summary of the podcast:\n {summary}
 
 Transcript of the podcast:\n {transcript}
-"""
+    """
+    return response
+
+def get_transcript_assemblyai(
+    response: aai.transcriber.Transcript
+) -> str:
+    """
+        This function gets the transcript from the AssemblyAI response.
+
+        Arguments:
+            response: aai.transcriber.Transcript - The response from the AssemblyAI transcriber.
+
+        Returns:
+            str - The transcript of the audio.
+    """
+    transcript = ""
+    for utterance in response.utterances:
+        transcript += f"Speaker {utterance.speaker}: {utterance.text}\n\n"
+    return transcript
+
+# Need to still implement this
+def validate_llm_response(
+    response: str,
+    expected_type: type
+):
+    try:
+        validated_response = eval(response)
+        if isinstance(validated_response, expected_type):
+            return validated_response
+    except SyntaxError:
+        logging.info(f"Normal eval failed. \nValidated response: {validated_response}. \nAttempting to clean and re-evaluate.")
+        # Attempt to clean the response and re-evaluate
+        try:
+            # Remove triple backticks, "python" keyword, and any leading/trailing whitespace
+            cleaned_response = response.replace('```python', '').replace('```', '').strip()
+            validated_response = eval(cleaned_response)
+            if isinstance(validated_response, expected_type):
+                return validated_response
+            elif validated_response is not None:
+                raise Exception(f"Validated response is not of type {expected_type}. Validated response type: {type(validated_response)}")
+        except Exception as e:
+            logging.info(f"Failed to evaluate cleaned response: {e}")
+            raise e
+
+def identify_speakers(
+    summary: str,
+    transcript: str,
+    system_prompt: str = default_system_prompt,
+    prompt: str = None
+) -> dict:
+
+    if prompt is None:
+        prompt = default_prompt(summary, transcript)
 
     system_instructions = {"role": "system", "content": system_prompt}
 
@@ -527,15 +559,16 @@ def replace_speakers(
 def transcribe_audio_assemblyai_with_replaced_speakers(
     audio_file_path: str,
     audio_summary: str,
-    first_host_speaker: str = None
+    first_host_speaker: str = None,
+    assemblyai_transcript: str = None
 ) -> aai.transcriber.Transcript:
 
     if first_host_speaker is not None:
         audio_summary = f"{audio_summary} \n\nThe first host to speak is {first_host_speaker}."
-
-    transcribed_audio = transcribe_audio_assemblyai(audio_file_path)
     
-    assemblyai_transcript = get_transcript_assemblyai(transcribed_audio)
+    if assemblyai_transcript is None:
+        transcribed_audio = transcribe_audio_assemblyai(audio_file_path)
+        assemblyai_transcript = get_transcript_assemblyai(transcribed_audio)
     
     speaker_dict = identify_speakers(audio_summary, assemblyai_transcript)
     
