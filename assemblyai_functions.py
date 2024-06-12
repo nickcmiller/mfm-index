@@ -217,11 +217,11 @@ def identify_speakers(
     """
     if prompt is None:
         prompt = f"""
-            Using the context of the conversation in the transcript and the background provided by the summary, identify the speakers in the podcast.
+            Using the context of the conversation in the transcript and the background provided by the summary, identify the participating speakers.
 
-            Summary of the podcast:\n {summary}
+            Summary of the conversation:\n {summary}
 
-            Transcript of the podcast:\n {transcript}
+            Transcript of the conversation:\n {transcript}
         """
 
     if system_prompt is None:
@@ -244,12 +244,10 @@ def identify_speakers(
                     }
         """ 
 
-    system_instructions = {"role": "system", "content": system_prompt}
-
     max_tries = 5
     
     for attempt in range(max_tries):
-        response = openai_text_response(prompt, [system_instructions])
+        response = openai_text_response(prompt, system_instructions=system_prompt)
         logging.info(f"Attempt {attempt + 1}: Response received.")
 
         try:
