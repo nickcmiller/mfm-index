@@ -2,6 +2,7 @@ from groq import Groq
 from text_models import groq_text_response, openai_text_response
 
 import os
+import re
 from typing import List, Optional, Dict, Any
 import logging
 import traceback
@@ -399,6 +400,8 @@ def main_transcribe_audio(
     
     return segments
 
+
+# AssemblyAI Functions
 def transcribe_audio_assemblyai(
     audio_file_path: str
 ) -> aai.transcriber.Transcript:
@@ -409,7 +412,30 @@ def transcribe_audio_assemblyai(
             audio_file_path: str - The path to the audio file to transcribe.
 
         Returns:
-        aai.transcriber.Transcript - The transcription response from AssemblyAI.
+            aai.transcriber.Transcript - The transcription response from AssemblyAI.
+        
+        Response Format:
+
+        {
+            utterances:[
+                0:{
+                    confidence:0.7246133333333334,
+                    end:3738,
+                    speaker:"A",
+                    start:570,
+                    text:"Um hey, Erica.",
+                    words:[...]
+                },
+                1:{
+                    confidence:0.6015349999999999,
+                    end:4430,
+                    speaker:"B",
+                    start:3834,
+                    text:"One in.",
+                    words:[...]
+                }
+            ]
+        }
     """
     aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 
@@ -427,42 +453,6 @@ def transcribe_audio_assemblyai(
 
     return response
 
-
-# AssemblyAI Functions
-
-default_system_prompt = """
-You only return properly formatted key-value store. 
-The output should Python eval to a dictionary. type(eval(response)) == dict
-
-Output Examples
-
-Example 1:
-{
-    "Speaker A": "FirstName LastName", 
-    "Speaker B": "FirstName LastName"
-}
-
-Example 2:
-{
-    "Speaker A": "FirstName LastName", 
-    "Speaker B": "FirstName LastName"
-}
-    
-""" 
-
-def default_prompt(
-    summary: str,
-    transcript: str
-):
-    response = f"""
-Using the context of the conversation in the transcript and the background provided by the summary, identify the speakers in the podcast.
-
-Summary of the podcast:\n {summary}
-
-Transcript of the podcast:\n {transcript}
-    """
-    return response
-
 def get_transcript_assemblyai(
     response: aai.transcriber.Transcript
 ) -> str:
@@ -474,68 +464,124 @@ def get_transcript_assemblyai(
 
         Returns:
             str - The transcript of the audio.
+
+        Example:
+            >>> print(get_transcript_assemblyai(transcribed_audio))
+            Speaker A: ...
+
+            Speaker B: ...
+            
+
     """
     transcript = ""
     for utterance in response.utterances:
         transcript += f"Speaker {utterance.speaker}: {utterance.text}\n\n"
     return transcript
 
-# Need to still implement this
 def validate_llm_response(
     response: str,
     expected_type: type
-):
+) -> dict:
+    """
+    This function validates the response from the LLM to ensure it is of the expected type.
+
+    Arguments:
+        response: str - The response from the LLM as a string.
+        expected_type: type - The expected type of the response after evaluating it.
+
+    Returns:
+        bool - True if the validated response is of the expected type.
+
+    Raises:
+        Exception - If the validated response is not of the expected type.
+
+    Example:
+        >>> response = "{'Speaker A': 'John Doe', 'Speaker B': 'Jane Smith'}"
+        >>> expected_type = dict
+        >>> print(validate_llm_response(response, expected_type))
+        True
+    """
+    validated_response = None
     try:
         validated_response = eval(response)
         if isinstance(validated_response, expected_type):
-            return validated_response
-    except SyntaxError:
-        logging.info(f"Normal eval failed. \nValidated response: {validated_response}. \nAttempting to clean and re-evaluate.")
-        # Attempt to clean the response and re-evaluate
-        try:
-            # Remove triple backticks, "python" keyword, and any leading/trailing whitespace
-            cleaned_response = response.replace('```python', '').replace('```', '').strip()
-            validated_response = eval(cleaned_response)
-            if isinstance(validated_response, expected_type):
-                return validated_response
-            elif validated_response is not None:
-                raise Exception(f"Validated response is not of type {expected_type}. Validated response type: {type(validated_response)}")
-        except Exception as e:
-            logging.info(f"Failed to evaluate cleaned response: {e}")
-            raise e
+            logging.info(f"Validated response is of type {expected_type}.")
+            return True
+        else:
+            raise Exception(f"Validated response is not of type {expected_type}. Validated response type: {type(validated_response)}")
+    except Exception as e:
+        raise e
 
 def identify_speakers(
     summary: str,
     transcript: str,
-    system_prompt: str = default_system_prompt,
-    prompt: str = None
+    prompt: str = None,
+    system_prompt: str = None,
 ) -> dict:
 
     if prompt is None:
-        prompt = default_prompt(summary, transcript)
+        prompt = f"""
+            Using the context of the conversation in the transcript and the background provided by the summary, identify the speakers in the podcast.
+
+            Summary of the podcast:\n {summary}
+
+            Transcript of the podcast:\n {transcript}
+        """
+
+    if system_prompt is None:
+        system_prompt = """
+            You only return properly formatted key-value store. 
+            The output should Python eval to a dictionary. type(eval(response)) == dict
+
+            Output Examples
+
+            Example 1:
+            {
+                "Speaker A": "FirstName LastName", 
+                "Speaker B": "FirstName LastName"
+            }
+
+            Example 2:
+            {
+                "Speaker A": "FirstName LastName", 
+                "Speaker B": "FirstName LastName"
+                    }
+        """ 
 
     system_instructions = {"role": "system", "content": system_prompt}
 
     max_tries = 5
+    
     for attempt in range(max_tries):
         response = openai_text_response(prompt, [system_instructions])
-        logging.info(f"Response {attempt}: {response}")
+        logging.info(f"Identify Speaker Response {attempt}: {response}")
+
+        validated_response = False
         try:
-            response_dict = eval(response)
-            if isinstance(response_dict, dict):
-                return response_dict
-        except SyntaxError:
-            logging.info(f"Normal eval failed. Attempting to clean and re-evaluate.")
-            # Attempt to clean the response and re-evaluate
-            try:
-                # Remove triple backticks, "python" keyword, and any leading/trailing whitespace
-                cleaned_response = response.replace('```python', '').replace('```', '').strip()
-                response_dict = eval(cleaned_response)
-                if isinstance(response_dict, dict):
-                    return response_dict
-            except Exception as e:
-                logging.info(f"Failed to evaluate cleaned response: {e}")
-            logging.info(f"Attempt {attempt + 1} failed to evaluate response as a dictionary. {max_tries - attempt - 1} tries left.")
+            logging.info(f"Attempting to evaluate and validate raw response.")
+            validation = validate_llm_response(response, dict)
+            if validation is True:
+                eval_response = eval(response)
+                logging.info(f"Identify Speaker Validated Dictionary: {json.dumps(eval_response, indent=4)}")
+                return eval_response
+        except Exception as e:
+            logging.error(f"Raw response failed to evaluate: {e}")
+            traceback.print_exc()
+
+        try:
+            logging.info(f"Attempting to clean, re-evaluate, and validate response.")
+            # Remove code block backticks and strings that come from the LLM
+            cleaned_response = re.sub(r'```[\w]+', '', response).replace('```', '').strip()
+            validation = validate_llm_response(cleaned_response, dict)
+            if validation is True:
+                eval_response = eval(cleaned_response)
+                logging.info(f"Identify Speaker Validated Dictionary: {json.dumps(eval_response, indent=4)}")
+                return eval_response
+        except Exception as e:
+            logging.error(f"Cleaned response failed to evaluate: {e}")
+            traceback.print_exc()
+
+        logging.error(f"Attempt {attempt + 1} failed to evaluate response as a dictionary. {max_tries - attempt - 1} tries left.")
     else:
         logging.error("Failed to obtain a valid dictionary response after maximum attempts.")
         traceback.print_exc()
@@ -556,25 +602,38 @@ def replace_speakers(
             raise Exception(exception_message)
     return speaker_transcript
 
-def transcribe_audio_assemblyai_with_replaced_speakers(
+def generate_assemblyai_transcript(
     audio_file_path: str,
+    output_file_path: str = None
+) -> str:
+    transcribed_audio = transcribe_audio_assemblyai(audio_file_path)
+    assemblyai_transcript = get_transcript_assemblyai(transcribed_audio)
+
+    if output_file_path is not None:
+        with open(output_file_path, 'w') as f:
+            f.write(assemblyai_transcript)
+
+    return assemblyai_transcript
+
+def replace_assemblyai_speakers(
+    assemblyai_transcript: str,
     audio_summary: str,
     first_host_speaker: str = None,
-    assemblyai_transcript: str = None
-) -> aai.transcriber.Transcript:
+    output_file_path: str = None
+) -> str:
 
     if first_host_speaker is not None:
-        audio_summary = f"{audio_summary} \n\nThe first host to speak is {first_host_speaker}."
-    
-    if assemblyai_transcript is None:
-        transcribed_audio = transcribe_audio_assemblyai(audio_file_path)
-        assemblyai_transcript = get_transcript_assemblyai(transcribed_audio)
+        audio_summary = f"{audio_summary} \n\nThe first host to speak is {first_host_speaker}"        
     
     speaker_dict = identify_speakers(audio_summary, assemblyai_transcript)
     
-    assemblyai_transcript_with_replaced_speakers = replace_speakers(assemblyai_transcript, speaker_dict)
+    transcript_with_replaced_speakers = replace_speakers(assemblyai_transcript, speaker_dict)
+
+    if output_file_path is not None:
+        with open(output_file_path, 'w') as f:
+            f.write(transcript_with_replaced_speakers)
     
-    return assemblyai_transcript_with_replaced_speakers
+    return transcript_with_replaced_speakers
 
 
 if __name__ == "__main__":
@@ -610,9 +669,12 @@ if __name__ == "__main__":
         """
 
         generated_summary = groq_text_response(summary_prompt)
-        
-        transcribed_audio_with_replaced_speakers = transcribe_audio_assemblyai_with_replaced_speakers(audio_file_path, generated_summary, "Sam Parr")
 
-        with open('replaced_transcript.txt', 'w') as f:
-            f.write(transcribed_audio_with_replaced_speakers)
+        if False:
+            assemblyai_transcript = generate_assemblyai_transcript(audio_file_path, "assemblyai_transcript.txt")
+        else:
+            with open('assemblyai_transcript.txt', 'r') as f:
+                assemblyai_transcript = f.read()
+        
+        replace_assemblyai_speakers(assemblyai_transcript, generated_summary, "Sam Parr", "replaced_transcript.txt")
         

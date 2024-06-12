@@ -45,7 +45,6 @@ def groq_text_response(
         "role": "user",
         "content": prompt,
     })
-    logging.info(f"Messages Input Count: {len(messages)}")
 
     try:    
         chat_completion = client.chat.completions.create(
@@ -94,7 +93,6 @@ def openai_text_response(
         "role": "user",
         "content": prompt,
     })
-    logging.info(f"Messages Input Count: {len(messages)}")
 
     try:    
         chat_completion = client.chat.completions.create(
