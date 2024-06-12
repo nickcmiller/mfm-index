@@ -395,13 +395,13 @@ if __name__ == "__main__":
         summary = entry["summary"]
 
         summary_prompt = f"""
-        Use the descriptions to summarize the podcast.\n
-        
-        Podcast Description:\n {summary} \n
+            Use the descriptions to summarize the podcast.\n
+            
+            Podcast Description:\n {summary} \n
 
-        Feed Description:\n {feed_summary} \n\n
+            Feed Description:\n {feed_summary} \n\n
 
-        Describe the hosts and the guests.
+            Describe the hosts and the guests.
         """
 
         generated_summary = groq_text_response(summary_prompt)
