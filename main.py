@@ -5,10 +5,12 @@ import json
 import logging
 import traceback
 import shutil
+import sys
+sys.path.append("./genai-toolbox")
 
-from download_video import yt_dlp_download
-from diarize_transcript import diarize_and_condense_audio_chunks
-from transcribe_audio import main_transcribe_audio
+from genai-toolbox.download_video import yt_dlp_download
+from genai-toolbox.diarize_transcript import diarize_and_condense_audio_chunks
+from genai-toolbox.transcribe_audio import main_transcribe_audio
 
 def create_audio_chunks(audio_file_path: str, temp_dir: str, chunk_size: int=25*60000) -> List[str]:
     """
@@ -298,8 +300,5 @@ def main(youtube_url: str):
 
 if __name__ == "__main__":
     youtube_url = "https://www.youtube.com/watch?v=PX2_gTCbjao&ab_channel=NBCBayArea"
-
-    transcript = main(youtube_url)
-    with open("transcript.txt", "w") as f:
-        f.write(transcript)
-    print(transcript)
+    download_path = yt_dlp_download(youtube_url)  
+    create_audio_chunks(download_path, "temp")
