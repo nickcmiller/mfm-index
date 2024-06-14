@@ -1,0 +1,3 @@
+[submodule "genai_toolbox"]
+	path = genai_toolbox
+	url = https://github.com/nickcmiller/genai_toolbox.git
