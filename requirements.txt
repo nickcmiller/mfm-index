@@ -3,6 +3,7 @@ feedparser
 groq
 httpx
 pyannote.audio
+python-dateutil
 python-dotenv
 pydub
 torch
