@@ -1,32 +1,20 @@
-from genai_toolbox.download_sources.podcast_functions import return_entries_from_feed
-from genai_toolbox.helper_functions.string_helpers import write_string_to_file
+from genai_toolbox.download_sources.podcast_functions import return_entries_by_date, download_podcast_audio, generate_audio_summary
+from genai_toolbox.helper_functions.string_helpers import write_string_to_file, retrieve_string_from_file, evaluate_and_clean_valid_response
+from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_transcript, replace_assemblyai_speakers
+from genai_toolbox.clients.openai_client import openai_client
+from genai_toolbox.text_prompting.model_calls import openai_text_response
 
 import json
-import datetime
-from dateutil import parser
-import pytz
-
-def get_date_with_timezone(
-    date_input: str, 
-    timezone_str: str = 'UTC'
-) -> datetime.datetime:
-    # Parse the date string
-    naive_date = parser.parse(date_input)
-    # Localize the date if it's naive
-    timezone = pytz.timezone(timezone_str)
-    if naive_date.tzinfo is None:
-        return timezone.localize(naive_date)
-    else:
-        return naive_date
+import logging
 
 # Example usage
-date_input = "June 8, 2024"
-published_date = get_date_with_timezone(date_input, 'UTC')
+start_date_input = "June 4, 2024"
+end_date_input = "June 6, 2024"
 
 feed_url = "https://feeds.megaphone.fm/HS2300184645"
-feed_entries = return_entries_from_feed(feed_url)
+feed_entries = return_entries_by_date(feed_url, start_date_input, end_date_input)
+write_string_to_file("mfm_feed.txt", json.dumps(feed_entries, indent=4))
 
-filtered_entries = [entry for entry in feed_entries if get_date_with_timezone(entry['published']) > published_date]
 """
 Sample Filter Entry:
 [
@@ -40,6 +28,123 @@ Sample Filter Entry:
     },
 ]
 """
-write_string_to_file("mfm_feed.txt", json.dumps(filtered_entries, indent=4))
+episode = feed_entries[0]
 
+if False:
+    audio_file_path = download_podcast_audio(episode['url'], episode['title'])
+    assemblyai_transcript = generate_assemblyai_transcript(audio_file_path, "assemblyai_transcript.txt")
+    write_string_to_file("assemblyai_transcript.txt", assemblyai_transcript)
+else:
+    assemblyai_transcript = retrieve_string_from_file("assemblyai_transcript.txt")
+
+if False:
+    summary_text = generate_audio_summary(episode['summary'], episode['feed_summary'])
+    replaced_transcript = replace_assemblyai_speakers(assemblyai_transcript, summary_text)
+    write_string_to_file("replaced_transcript.txt", replaced_transcript)
+else:
+    replaced_transcript = retrieve_string_from_file("replaced_transcript.txt")
+
+def split_text_string(text, separator):
+    chunks = text.split(separator)
+    return chunks
+chunks = split_text_string(replaced_transcript, "\n\n")
+
+client = openai_client()
+
+def create_semantic_indices(
+    text: str
+) -> list[dict]:
+    system_instructions = """
+    Given a conversation, produce a JSON list of dictionaries that achieve the following: 
+    - Analyze the flow of the conversation
+    - Identify shifts in topic or context
+    - Group related messages into chunks based on semantic similarity
+    - Preserve the chronological order of messages within each chunk
+    - Provide start and end indices for each proposed chunk in the original text
+
+    Examples of properly formatted JSON output:
+    ```
+    [
+        {
+            "topic": "Topic 1", 
+            "start_index": 0,
+            "end_index": 237
+        },
+        {
+            "topic": "Topic 2",
+            "start_index": 238, 
+            "end_index": 1522
+        },
+        {
+            "topic": "Topic 3",
+            "start_index": 1523,
+            "end_index": 2879
+        },
+        ...
+    ]
+    ```
+    """
+
+    prompt = f"""
+    Conversation: {text}
+    """
+    count = 0
+    while count < 5:    
+        try:
+            response = openai_text_response(prompt, system_instructions=system_instructions)
+            logging.info(f"Response: {response}")
+            valid_response = evaluate_and_clean_valid_response(response, list)
+            if all(isinstance(item, dict) for item in valid_response):
+                return valid_response
+            else:
+                raise ValueError(f"Response items are not of type {expected_type}")
+        except Exception as e:
+            logging.error(f"Error: {e}")
+            count += 1
+    logging.error(f"Failed to get valid response after {count} attempts")
+    return []
+
+if True:
+    semantic_indices = create_semantic_indices(replaced_transcript)
+    write_string_to_file("semantic_indices.txt", json.dumps(semantic_indices, indent=4))
+else:
+    semantic_indices = retrieve_string_from_file("semantic_indices.txt")
+
+print(json.dumps(semantic_indices, indent=4))    
+print(type(semantic_indices))
+
+
+def chunk_document(
+    document: str, 
+    semantic_chunks: list[dict]
+) -> list[dict]:
+    chunks = []
+    for chunk_info in semantic_chunks:
+        start_index = chunk_info['start_index']
+        end_index = chunk_info['end_index']
+        chunk_text = document[start_index:end_index]
+        chunks.append({
+            'topic': chunk_info['topic'],
+            'text': chunk_text
+        })
+    return chunks
+
+chunks = chunk_document(replaced_transcript, semantic_indices)
+print(json.dumps(chunks, indent=4))
+
+
+
+def create_embedding(chunk):
+    response = client.embeddings.create(
+        input=chunk, 
+        model="text-embedding-3-small"
+    )
+    return response.data[0].embedding
+
+
+if False:
+    embeddings = [create_embedding(chunk) for chunk in chunks]
+    write_string_to_file("embeddings.txt", json.dumps(embeddings, indent=4))
+else:
+    embeddings = retrieve_string_from_file("embeddings.txt")
 
