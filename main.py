@@ -6,6 +6,8 @@ from genai_toolbox.text_prompting.model_calls import openai_text_response
 
 import json
 import logging
+import numpy as np
+from typing import Callable
 
 # Example usage
 start_date_input = "June 4, 2024"
@@ -44,107 +46,131 @@ if False:
 else:
     replaced_transcript = retrieve_string_from_file("replaced_transcript.txt")
 
-def split_text_string(text, separator):
+def split_text_string(
+    text: str, 
+    separator: str
+):
     chunks = text.split(separator)
     return chunks
 chunks = split_text_string(replaced_transcript, "\n\n")
 
-client = openai_client()
-
-def create_semantic_indices(
-    text: str
-) -> list[dict]:
-    system_instructions = """
-    Given a conversation, produce a JSON list of dictionaries that achieve the following: 
-    - Analyze the flow of the conversation
-    - Identify shifts in topic or context
-    - Group related messages into chunks based on semantic similarity
-    - Preserve the chronological order of messages within each chunk
-    - Provide start and end indices for each proposed chunk in the original text
-
-    Examples of properly formatted JSON output:
-    ```
-    [
-        {
-            "topic": "Topic 1", 
-            "start_index": 0,
-            "end_index": 237
-        },
-        {
-            "topic": "Topic 2",
-            "start_index": 238, 
-            "end_index": 1522
-        },
-        {
-            "topic": "Topic 3",
-            "start_index": 1523,
-            "end_index": 2879
-        },
-        ...
-    ]
-    ```
+def consolidate_short_chunks(
+    chunks, 
+    max_length=75
+) -> list[str]:
     """
+    Combines consecutive chunks of text that are shorter than `max_length`.
+    Chunks longer than `max_length` are added as separate entries in the result list.
 
-    prompt = f"""
-    Conversation: {text}
+    Args:
+    chunks (list of str): The list of text chunks to process.
+    max_length (int): The maximum length for a chunk to be considered short.
+
+    Returns:
+    list of str: A new list of chunks where short consecutive chunks have been combined.
     """
-    count = 0
-    while count < 5:    
-        try:
-            response = openai_text_response(prompt, system_instructions=system_instructions)
-            logging.info(f"Response: {response}")
-            valid_response = evaluate_and_clean_valid_response(response, list)
-            if all(isinstance(item, dict) for item in valid_response):
-                return valid_response
+    new_chunks = []
+    combine_chunks = []
+
+    for chunk in chunks:
+        if len(chunk) < max_length:
+            combine_chunks.append(chunk)
+        else:
+            if combine_chunks:
+                combine_chunks.append(chunk)
+                new_chunks.append('\n\n'.join(combine_chunks))
+                combine_chunks = []
+            elif len(chunk) == 0:
+                continue
             else:
-                raise ValueError(f"Response items are not of type {expected_type}")
-        except Exception as e:
-            logging.error(f"Error: {e}")
-            count += 1
-    logging.error(f"Failed to get valid response after {count} attempts")
-    return []
+               new_chunks.append(chunk)
 
-if True:
-    semantic_indices = create_semantic_indices(replaced_transcript)
-    write_string_to_file("semantic_indices.txt", json.dumps(semantic_indices, indent=4))
-else:
-    semantic_indices = retrieve_string_from_file("semantic_indices.txt")
+    # Ensure any remaining chunks in combine_chunks are added to new_chunks
+    if len(combine_chunks) > 0:
+        new_chunks.append('\n\n'.join(combine_chunks))
 
-print(json.dumps(semantic_indices, indent=4))    
-print(type(semantic_indices))
+    return new_chunks
 
+lengthened_chunks = consolidate_short_chunks(chunks, 100)
+# for chunk in consolidated_chunks:
+#     print(f"{10*'-'}\n{len(chunk)}\n{chunk}\n{10*'-'}\n")
+        
 
-def chunk_document(
-    document: str, 
-    semantic_chunks: list[dict]
-) -> list[dict]:
-    chunks = []
-    for chunk_info in semantic_chunks:
-        start_index = chunk_info['start_index']
-        end_index = chunk_info['end_index']
-        chunk_text = document[start_index:end_index]
-        chunks.append({
-            'topic': chunk_info['topic'],
-            'text': chunk_text
-        })
-    return chunks
-
-chunks = chunk_document(replaced_transcript, semantic_indices)
-print(json.dumps(chunks, indent=4))
-
-
-
-def create_embedding(chunk):
+client = openai_client()
+def create_embedding(
+    chunk: str
+) -> list[float]:
     response = client.embeddings.create(
         input=chunk, 
         model="text-embedding-3-small"
     )
     return response.data[0].embedding
 
+def embed_string_list(
+    chunks: list[str]
+) -> list[list[float]]:
+    return [create_embedding(chunk) for chunk in chunks]
 
 if False:
-    embeddings = [create_embedding(chunk) for chunk in chunks]
-    write_string_to_file("embeddings.txt", json.dumps(embeddings, indent=4))
+    lengthened_chunk_embeddings = embed_string_list(consolidated_chunks)
+    write_string_to_file("embeddings.txt", json.dumps(lengthened_chunk_embeddings, indent=4))
 else:
-    embeddings = retrieve_string_from_file("embeddings.txt")
+    lengthened_chunk_embeddings = retrieve_string_from_file("embeddings.txt")
+    lengthened_chunk_embeddings = json.loads(lengthened_chunk_embeddings)
+
+def cosine_similarity(
+    vec1: list[float], 
+    vec2: list[float]
+):
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+
+def consolidate_similar_chunks(
+    chunks: list[str],
+    embeddings: list[list[float]],
+    threshold: float = 0.45,
+    similarity_metric: Callable = cosine_similarity
+) -> list[str]:
+    current_chunk = []
+    similar_chunks = []
+    used_indices = set()
+    
+    for i in range(len(chunks)):
+        if i in used_indices:
+            continue
+        current_chunk = [chunks[i]]
+        similar_found = False
+        for j in range(i + 1, len(chunks)):
+            if j in used_indices:
+                continue
+            similarity = similarity_metric(embeddings[i], embeddings[j])
+            print(f"Similarity: {similarity}")
+            if similarity > threshold:
+                current_chunk.append(chunks[j])
+                used_indices.add(j)
+                similar_found = True
+            else:
+                if len(current_chunk) > 1:
+                    similar_chunks.append('\n\n'.join(current_chunk))
+                    appended_chunk = '\n\n'.join(current_chunk)
+                    print(f"{10*'-'}\n{appended_chunk}\n{10*'-'}\n")
+                break      
+        if similar_found is False:
+            similar_chunks.append(chunks[i])
+            print(f"{chunks[i]}\n\n")
+
+        used_indices.add(i)
+    
+    if len(current_chunk) > 0:
+        similar_chunks.append('\n\n'.join(current_chunk))
+        print(f"{10*'-'}\n{' '.join(current_chunk)}\n{10*'-'}\n")
+    
+    return similar_chunks
+
+similar_chunks = consolidate_similar_chunks(lengthened_chunks, lengthened_chunk_embeddings, .5)
+for chunk in similar_chunks:
+    print(f"{len(chunk)}\n--------\n")   
+
+
 
