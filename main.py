@@ -213,8 +213,11 @@ async def download_multiple_episodes_by_date(
 ) -> List[Dict[str, str]]:
     feed_entries = return_entries_by_date(feed_url, start_date, end_date)
     updated_entries = []
+    if download_path and not os.path.exists(download_path):
+        os.makedirs(download_path)
 
     logging.info(f"Downloading {len(feed_entries)} episodes")
+    
 
     async def process_entry(entry: Dict[str, str]) -> Dict[str, str]:
         try:
@@ -225,7 +228,7 @@ async def download_multiple_episodes_by_date(
                 download_path
             )
             entry['audio_file_path'] = audio_file_path
-            entry['transcript'] = await asyncio.to_thread(
+            entry['audio_summary'] = await asyncio.to_thread(
                 generate_audio_summary, 
                 entry['summary'], 
                 entry['feed_summary']
@@ -253,9 +256,6 @@ async def main():
     download_path = os.path.join(os.getcwd(), "tmp_audio/")
 
     if True:
-        if not os.path.exists(download_path):
-            os.makedirs(download_path)
-
         updated_entries = await download_multiple_episodes_by_date(
             feed_url=feed_url,
             start_date=start_date_input,
@@ -271,17 +271,6 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
-
-
-    # if False:
-    #     feed_entries = return_entries_by_date(feed_url, start_date_input, end_date_input)
-    #     write_string_to_file("mfm_feed.txt", json.dumps(feed_entries, indent=4))
-    # else:
-    #     feed_entries = retrieve_string_from_file("mfm_feed.txt")
-    #     feed_entries = json.loads(feed_entries)
-
-    # episode = feed_entries[0]
-    # episode_title = episode['title']
 
     # if False:
     #     audio_file_path = download_podcast_audio(episode['url'], episode['title'])
