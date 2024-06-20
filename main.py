@@ -9,42 +9,7 @@ import logging
 import numpy as np
 from typing import Callable
 
-# Example usage
-start_date_input = "June 4, 2024"
-end_date_input = "June 6, 2024"
-
-feed_url = "https://feeds.megaphone.fm/HS2300184645"
-feed_entries = return_entries_by_date(feed_url, start_date_input, end_date_input)
-write_string_to_file("mfm_feed.txt", json.dumps(feed_entries, indent=4))
-
-"""
-Sample Filter Entry:
-[
-    {
-        "entry_id": "cdf26398-2ca3-11ef-a5ee-975153545b62",
-        "title": "EXCLUSIVE: $3B Founder Reveals His Next Big Idea",
-        "published": "Mon, 17 Jun 2024 14:00:00 -0000",
-        "summary": "Episode 597: Sam Parr ( https://twitter.com/theSamParr ) talks to Brett Adcock ( https://x.com/adcock_brett ) about his next big idea, his checklist for entrepreneurs, and his framework for learning new things and moving fast.\u00a0\n\n\u2014\nShow Notes:\n(0:00) Solving school shootings\n(3:15) Cold calling NASA\n(6:14) Spotting the mega-trend\n(8:37) \"Thinking big is easier\"\n(12:42) Brett's philosophy on company names\n(16:22) Brett's ideas note app: genetics, super-sonic travel, synthetic foods\n(19:45) \"I just want to win\"\n(21:46) Brett's checklist for entrepreneurs\n(25:17) Being fast in hardware\n(30:15) Brett's framework for learning new things\n(33:00) Who does Brett admire\n\n\u2014\nLinks:\n\u2022 [Steal This] Get our proven writing frameworks that have made us millions https://clickhubspot.com/copy\n\u2022 Brett Adcock - https://www.brettadcock.com/\n\u2022 Cover - https://www.cover.ai/\n\u2022 Figure - https://figure.ai/\n\n\u2014\nCheck Out Shaan's Stuff:\nNeed to hire? You should use the same service Shaan uses to hire developers, designers, & Virtual Assistants \u2192 it\u2019s called Shepherd (tell \u2018em Shaan sent you): https://bit.ly/SupportShepherd\n\n\u2014\nCheck Out Sam's Stuff:\n\u2022 Hampton - https://www.joinhampton.com/\n\u2022 Ideation Bootcamp - https://www.ideationbootcamp.co/\n\u2022 Copy That - https://copythat.com\n\u2022 Hampton Wealth Survey - https://joinhampton.com/wealth\n\u2022 Sam\u2019s List - http://samslist.co/\n\n\nMy First Million is a HubSpot Original Podcast // Brought to you by The HubSpot Podcast Network // Production by Arie Desormeaux // Editing by Ezra Bakker Trupiano",
-        "url": "https://pdst.fm/e/chrt.fm/track/28555/pdrl.fm/2a922f/traffic.megaphone.fm/HS9983733981.mp3?updated=1718638499",
-        "feed_summary": "Sam Parr and Shaan Puri brainstorm new business ideas based on trends & opportunities they see in the market. Sometimes they bring on famous guests to brainstorm with them."
-    },
-]
-"""
-episode = feed_entries[0]
-
-if False:
-    audio_file_path = download_podcast_audio(episode['url'], episode['title'])
-    assemblyai_transcript = generate_assemblyai_transcript(audio_file_path, "assemblyai_transcript.txt")
-    write_string_to_file("assemblyai_transcript.txt", assemblyai_transcript)
-else:
-    assemblyai_transcript = retrieve_string_from_file("assemblyai_transcript.txt")
-
-if False:
-    summary_text = generate_audio_summary(episode['summary'], episode['feed_summary'])
-    replaced_transcript = replace_assemblyai_speakers(assemblyai_transcript, summary_text)
-    write_string_to_file("replaced_transcript.txt", replaced_transcript)
-else:
-    replaced_transcript = retrieve_string_from_file("replaced_transcript.txt")
+client = openai_client()
 
 def split_text_string(
     text: str, 
@@ -52,7 +17,6 @@ def split_text_string(
 ):
     chunks = text.split(separator)
     return chunks
-chunks = split_text_string(replaced_transcript, "\n\n")
 
 def consolidate_short_chunks(
     chunks, 
@@ -90,33 +54,25 @@ def consolidate_short_chunks(
         new_chunks.append('\n\n'.join(combine_chunks))
 
     return new_chunks
-
-lengthened_chunks = consolidate_short_chunks(chunks, 100)
-# for chunk in consolidated_chunks:
-#     print(f"{10*'-'}\n{len(chunk)}\n{chunk}\n{10*'-'}\n")
         
 
-client = openai_client()
 def create_embedding(
-    chunk: str
+    chunk: str,
+    client: Callable,
+    model_choice: str = "text-embedding-3-small"
 ) -> list[float]:
     response = client.embeddings.create(
         input=chunk, 
-        model="text-embedding-3-small"
+        model=model_choice
     )
     return response.data[0].embedding
 
 def embed_string_list(
-    chunks: list[str]
+    chunks: list[str],
+    client: Callable,
+    model_choice: str = "text-embedding-3-small"
 ) -> list[list[float]]:
-    return [create_embedding(chunk) for chunk in chunks]
-
-if False:
-    lengthened_chunk_embeddings = embed_string_list(consolidated_chunks)
-    write_string_to_file("embeddings.txt", json.dumps(lengthened_chunk_embeddings, indent=4))
-else:
-    lengthened_chunk_embeddings = retrieve_string_from_file("embeddings.txt")
-    lengthened_chunk_embeddings = json.loads(lengthened_chunk_embeddings)
+    return [create_embedding(chunk, client, model_choice) for chunk in chunks]
 
 def cosine_similarity(
     vec1: list[float], 
@@ -145,7 +101,6 @@ def consolidate_similar_chunks(
             if j in used_indices:
                 continue
             similarity = similarity_metric(embeddings[i], embeddings[j])
-            print(f"Similarity: {similarity}")
             if similarity > threshold:
                 current_chunk.append(chunks[j])
                 used_indices.add(j)
@@ -153,24 +108,125 @@ def consolidate_similar_chunks(
             else:
                 if len(current_chunk) > 1:
                     similar_chunks.append('\n\n'.join(current_chunk))
-                    appended_chunk = '\n\n'.join(current_chunk)
-                    print(f"{10*'-'}\n{appended_chunk}\n{10*'-'}\n")
                 break      
         if similar_found is False:
             similar_chunks.append(chunks[i])
-            print(f"{chunks[i]}\n\n")
-
         used_indices.add(i)
     
     if len(current_chunk) > 0:
         similar_chunks.append('\n\n'.join(current_chunk))
-        print(f"{10*'-'}\n{' '.join(current_chunk)}\n{10*'-'}\n")
     
     return similar_chunks
 
-similar_chunks = consolidate_similar_chunks(lengthened_chunks, lengthened_chunk_embeddings, .5)
-for chunk in similar_chunks:
-    print(f"{len(chunk)}\n--------\n")   
+def query_chunks(
+    query: str,
+    client: Callable,
+    chunks: list[str], 
+    chunk_embeddings: list[list[float]], 
+    model_choice: str = "text-embedding-3-small",
+    threshold: float = 0.5
+) -> list[str]:
+    """
+    Query chunks based on a text query to find similar chunks.
+
+    Args:
+    query (str): The query string.
+    chunks (list of str): The list of text chunks.
+    chunk_embeddings (list of list[float]): The list of embeddings corresponding to the chunks.
+    threshold (float): The similarity threshold to consider a chunk as similar.
+
+    Returns:
+    list of str: A list of chunks that are similar to the query.
+    """
+    # Generate embedding for the query
+    query_embedding = create_embedding(query, client, model_choice)
+
+    # Find similar chunks
+    similar_chunks = []
+    for chunk, embedding in zip(chunks, chunk_embeddings):
+        similarity = cosine_similarity(query_embedding, embedding)
+        if similarity > threshold:
+            similar_chunks.append([chunk, similarity])
+
+    return similar_chunks
 
 
+if __name__ == "__main__":
+    # Example usage
+    feed_url = "https://feeds.megaphone.fm/HS2300184645"
+    start_date_input = "June 4, 2024"
+    end_date_input = "June 6, 2024"
 
+    if False:
+        
+        feed_entries = return_entries_by_date(feed_url, start_date_input, end_date_input)
+        write_string_to_file("mfm_feed.txt", json.dumps(feed_entries, indent=4))
+    else:
+        feed_entries = retrieve_string_from_file("mfm_feed.txt")
+        feed_entries = json.loads(feed_entries)
+
+    episode = feed_entries[0]
+
+    if False:
+        audio_file_path = download_podcast_audio(episode['url'], episode['title'])
+        assemblyai_transcript = generate_assemblyai_transcript(audio_file_path, "assemblyai_transcript.txt")
+        write_string_to_file("assemblyai_transcript.txt", assemblyai_transcript)
+    else:
+        assemblyai_transcript = retrieve_string_from_file("assemblyai_transcript.txt")
+
+
+    if False:
+        summary_text = generate_audio_summary(episode['summary'], episode['feed_summary'])
+        replaced_transcript = replace_assemblyai_speakers(assemblyai_transcript, summary_text)
+        write_string_to_file("replaced_transcript.txt", replaced_transcript)
+    else:
+        replaced_transcript = retrieve_string_from_file("replaced_transcript.txt")
+
+    chunks = split_text_string(replaced_transcript, "\n\n")
+    lengthened_chunks = consolidate_short_chunks(chunks, 100)
+
+    if False:
+        model_choice = "text-embedding-3-large"
+        lengthened_chunk_embeddings = embed_string_list(lengthened_chunks, client, model_choice)
+        write_string_to_file("embeddings.txt", json.dumps(lengthened_chunk_embeddings, indent=4))
+    else:
+        lengthened_chunk_embeddings = retrieve_string_from_file("embeddings.txt")
+        lengthened_chunk_embeddings = json.loads(lengthened_chunk_embeddings)
+
+    similar_chunks = consolidate_similar_chunks(lengthened_chunks, lengthened_chunk_embeddings, .5)
+
+    if False:
+        model_choice = "text-embedding-3-large"
+        similar_chunk_embeddings = embed_string_list(similar_chunks, client, model_choice)
+        write_string_to_file("similar_chunk_embeddings.txt", json.dumps(similar_chunk_embeddings, indent=4))
+    else:
+        similar_chunk_embeddings = retrieve_string_from_file("similar_chunk_embeddings.txt")
+        similar_chunk_embeddings = json.loads(similar_chunk_embeddings)
+
+    print(f"type(similar_chunk_embeddings): {type(similar_chunk_embeddings)}")
+    print(f"len(chunks): {len(chunks)}")
+    print(f"len(lengthened_chunks): {len(lengthened_chunks)}")
+    print(f"len(similar_chunks): {len(similar_chunks)}")
+    print(f"len(similar_chunk_embeddings): {len(similar_chunk_embeddings)}")
+
+    model_choice = "text-embedding-3-large"
+    query = "What are current business trends?"
+    query_response = query_chunks(
+        query=query, 
+        client=client, 
+        model_choice=model_choice, 
+        chunks=similar_chunks, 
+        chunk_embeddings=similar_chunk_embeddings, 
+        threshold=.25
+    )
+    sorted_query_response = sorted(query_response, key=lambda x: x[1], reverse=True)[:5]
+    complete_query_response = ""
+    for count, chunk in enumerate(sorted_query_response):
+        complete_query_response += f"Source {count+1}\n{10*'-'}\n{chunk[0]}\n\n"
+
+    system_prompt = "You are an expert at answering questions. Use information from sources to provide answers."
+    prompt = f"{query}\n\n{complete_query_response}"
+    print(f"{10*'-'}\n{prompt}\n{10*'-'}\n")
+    response = openai_text_response(prompt, system_prompt, model_choice="4o")
+    print(f"\n\n{response}\n\n")
+    
