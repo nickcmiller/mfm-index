@@ -1,4 +1,5 @@
 assemblyai
+asyncio
 feedparser
 groq
 numpy
@@ -9,5 +10,6 @@ pyannote.audio
 python-dateutil
 python-dotenv
 pydub
+tqdm
 trufflepig-py
 yt_dlp

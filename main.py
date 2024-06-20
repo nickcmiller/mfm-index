@@ -4,10 +4,17 @@ from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai
 from genai_toolbox.clients.openai_client import openai_client
 from genai_toolbox.text_prompting.model_calls import openai_text_response, anthropic_text_response
 
+
+
 import json
+import os
 import logging
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
 import numpy as np
-from typing import Callable
+from typing import Callable, List, Dict, Optional
 
 client = openai_client()
 
@@ -133,12 +140,12 @@ def create_chunks_with_metadata(
     ]
 
 def query_chunks_with_metadata(
-        query: str,
-        chunks_with_metadata: list[dict], 
-        client: Callable,
-        model_choice: str = "text-embedding-3-large",
-        threshold: float = 0.4,
-        max_returned_chunks: int = 10,
+    query: str,
+    chunks_with_metadata: list[dict], 
+    client: Callable,
+    model_choice: str = "text-embedding-3-large",
+    threshold: float = 0.4,
+    max_returned_chunks: int = 10,
 ) -> list[dict]:
     query_embedding = create_embedding(query, client, model_choice)
 
@@ -173,7 +180,6 @@ def llm_response_with_query(
         threshold=threshold,
         max_returned_chunks=max_query_chunks
     )
-    print(f"QUERY RESPONSE:\n\n{query_response}\n\n")
 
     if len(query_response) == 0:
         return "Sources are not relevant enough to answer this question"
@@ -199,77 +205,116 @@ def llm_response_with_query(
 
     return response
 
-if __name__ == "__main__":
-    # Example usage
+async def download_multiple_episodes_by_date(
+    feed_url: str,
+    start_date: str,
+    end_date: str,
+    download_path: Optional[str] = None
+) -> List[Dict[str, str]]:
+    feed_entries = return_entries_by_date(feed_url, start_date, end_date)
+    updated_entries = []
+
+    logging.info(f"Downloading {len(feed_entries)} episodes")
+
+    async def process_entry(entry: Dict[str, str]) -> Dict[str, str]:
+        try:
+            audio_file_path = await asyncio.to_thread(
+                download_podcast_audio, 
+                entry['url'], 
+                entry['title'], 
+                download_path
+            )
+            entry['audio_file_path'] = audio_file_path
+            entry['transcript'] = await asyncio.to_thread(
+                generate_audio_summary, 
+                entry['summary'], 
+                entry['feed_summary']
+            )
+            return entry
+        except Exception as e:
+            logging.error(f"Error processing entry {entry['title']}: {str(e)}")
+            return None
+
+    with ThreadPoolExecutor() as executor:
+        tasks = [asyncio.create_task(process_entry(entry)) for entry in feed_entries]
+        for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=f"\n\nProcessing episodes"):
+            result = await task
+            if result:
+                updated_entries.append(result)
+
+    logging.info(f"Successfully processed {len(updated_entries)} out of {len(feed_entries)} episodes")
+    return updated_entries
+
+
+async def main():
     feed_url = "https://feeds.megaphone.fm/HS2300184645"
-    start_date_input = "June 4, 2024"
-    end_date_input = "June 6, 2024"
+    start_date_input = "June 1, 2024"
+    end_date_input = "June 10, 2024"
+    download_path = os.path.join(os.getcwd(), "tmp_audio/")
 
-    if False:
-        feed_entries = return_entries_by_date(feed_url, start_date_input, end_date_input)
-        write_string_to_file("mfm_feed.txt", json.dumps(feed_entries, indent=4))
+    if True:
+        if not os.path.exists(download_path):
+            os.makedirs(download_path)
+
+        updated_entries = await download_multiple_episodes_by_date(
+            feed_url=feed_url,
+            start_date=start_date_input,
+            end_date=end_date_input,
+            download_path=download_path
+        )
+        write_string_to_file("mfm_feed.txt", json.dumps(updated_entries, indent=4))
     else:
-        feed_entries = retrieve_string_from_file("mfm_feed.txt")
-        feed_entries = json.loads(feed_entries)
+        updated_entries = retrieve_string_from_file("mfm_feed.txt")
+        updated_entries = json.loads(updated_entries)
+   
 
-    episode = feed_entries[0]
-    episode_title = episode['title']
-
-    if False:
-        audio_file_path = download_podcast_audio(episode['url'], episode['title'])
-        assemblyai_transcript = generate_assemblyai_transcript(audio_file_path, "assemblyai_transcript.txt")
-        write_string_to_file("assemblyai_transcript.txt", assemblyai_transcript)
-    else:
-        assemblyai_transcript = retrieve_string_from_file("assemblyai_transcript.txt")
+if __name__ == "__main__":
+    asyncio.run(main())
 
 
-    if False:
-        summary_text = generate_audio_summary(episode['summary'], episode['feed_summary'])
-        replaced_transcript = replace_assemblyai_speakers(assemblyai_transcript, summary_text)
-        write_string_to_file("replaced_transcript.txt", replaced_transcript)
-    else:
-        replaced_transcript = retrieve_string_from_file("replaced_transcript.txt")
 
-    chunks = split_text_string(replaced_transcript, "\n\n")
-    lengthened_chunks = consolidate_short_chunks(chunks, 100)
+    # if False:
+    #     feed_entries = return_entries_by_date(feed_url, start_date_input, end_date_input)
+    #     write_string_to_file("mfm_feed.txt", json.dumps(feed_entries, indent=4))
+    # else:
+    #     feed_entries = retrieve_string_from_file("mfm_feed.txt")
+    #     feed_entries = json.loads(feed_entries)
 
-    if False:
-        model_choice = "text-embedding-3-large"
-        lengthened_chunk_embeddings = embed_string_list(lengthened_chunks, client, model_choice)
-        write_string_to_file("embeddings.txt", json.dumps(lengthened_chunk_embeddings, indent=4))
-    else:
-        lengthened_chunk_embeddings = retrieve_string_from_file("embeddings.txt")
-        lengthened_chunk_embeddings = json.loads(lengthened_chunk_embeddings)
+    # episode = feed_entries[0]
+    # episode_title = episode['title']
 
-    similar_chunks = consolidate_similar_chunks(lengthened_chunks, lengthened_chunk_embeddings, .5)
+    # if False:
+    #     audio_file_path = download_podcast_audio(episode['url'], episode['title'])
+    #     assemblyai_transcript = generate_assemblyai_transcript(audio_file_path, "assemblyai_transcript.txt")
+    #     write_string_to_file("assemblyai_transcript.txt", assemblyai_transcript)
+    # else:
+    #     assemblyai_transcript = retrieve_string_from_file("assemblyai_transcript.txt")
 
-    if False:
-        model_choice = "text-embedding-3-large"
-        similar_chunk_embeddings = embed_string_list(similar_chunks, client, model_choice)
-        write_string_to_file("similar_chunk_embeddings.txt", json.dumps(similar_chunk_embeddings, indent=4))
-    else:
-        similar_chunk_embeddings = retrieve_string_from_file("similar_chunk_embeddings.txt")
-        similar_chunk_embeddings = json.loads(similar_chunk_embeddings)
 
-    print(f"len(similar_chunks): {len(similar_chunks)}")
-    print(f"len(similar_chunk_embeddings): {len(similar_chunk_embeddings)}")
-    print(f"type(similar_chunks): {type(similar_chunks)}")
-    print(f"type(similar_chunk_embeddings): {type(similar_chunk_embeddings[0])}")
+    # if False:
+    #     summary_text = generate_audio_summary(episode['summary'], episode['feed_summary'])
+    #     replaced_transcript = replace_assemblyai_speakers(assemblyai_transcript, summary_text)
+    #     write_string_to_file("replaced_transcript.txt", replaced_transcript)
+    # else:
+    #     replaced_transcript = retrieve_string_from_file("replaced_transcript.txt")
 
-    chunks_with_metadata = create_chunks_with_metadata(
-        source=episode_title,
-        chunks=similar_chunks,
-        chunk_embeddings=similar_chunk_embeddings
-    )
+    # chunks = split_text_string(replaced_transcript, "\n\n")
+    # lengthened_chunks = consolidate_short_chunks(chunks, 100)
 
-    question = "What is their advice around raising a family?"
+    # if False:
+    #     model_choice = "text-embedding-3-large"
+    #     lengthened_chunk_embeddings = embed_string_list(lengthened_chunks, client, model_choice)
+    #     write_string_to_file("embeddings.txt", json.dumps(lengthened_chunk_embeddings, indent=4))
+    # else:
+    #     lengthened_chunk_embeddings = retrieve_string_from_file("embeddings.txt")
+    #     lengthened_chunk_embeddings = json.loads(lengthened_chunk_embeddings)
 
-    response = llm_response_with_query(
-        question=question,
-        chunks_with_metadata=chunks_with_metadata,
-        llm_function=anthropic_text_response,
-        llm_model="sonnet",
-        max_query_chunks=8,
-        threshold=0.25
-    )
-    print(f"\n\n{response}\n\n")
+    # similar_chunks = consolidate_similar_chunks(lengthened_chunks, lengthened_chunk_embeddings, .5)
+
+    # if False:
+    #     model_choice = "text-embedding-3-large"
+    #     similar_chunk_embeddings = embed_string_list(similar_chunks, client, model_choice)
+    #     write_string_to_file("similar_chunk_embeddings.txt", json.dumps(similar_chunk_embeddings, indent=4))
+    # else:
+    #     similar_chunk_embeddings = retrieve_string_from_file("similar_chunk_embeddings.txt")
+    #     similar_chunk_embeddings = json.loads(similar_chunk_embeddings)
