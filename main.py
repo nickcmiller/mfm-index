@@ -2,7 +2,7 @@ from genai_toolbox.download_sources.podcast_functions import return_entries_by_d
 from genai_toolbox.helper_functions.string_helpers import write_string_to_file, retrieve_string_from_file, evaluate_and_clean_valid_response
 from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_transcript, replace_assemblyai_speakers
 from genai_toolbox.clients.openai_client import openai_client
-from genai_toolbox.text_prompting.model_calls import openai_text_response
+from genai_toolbox.text_prompting.model_calls import openai_text_response, anthropic_text_response
 
 import json
 import logging
@@ -16,11 +16,11 @@ def split_text_string(
     separator: str
 ):
     chunks = text.split(separator)
-    return chunks
+    return [chunk for chunk in chunks if chunk]
 
 def consolidate_short_chunks(
-    chunks, 
-    max_length=75
+    chunks: list[str], 
+    max_length: int = 75
 ) -> list[str]:
     """
     Combines consecutive chunks of text that are shorter than `max_length`.
@@ -33,29 +33,28 @@ def consolidate_short_chunks(
     Returns:
     list of str: A new list of chunks where short consecutive chunks have been combined.
     """
-    new_chunks = []
+    lengthened_chunks = []
     combine_chunks = []
 
     for chunk in chunks:
+        if len(chunk) == 0:
+            continue
+
         if len(chunk) < max_length:
             combine_chunks.append(chunk)
         else:
             if combine_chunks:
                 combine_chunks.append(chunk)
-                new_chunks.append('\n\n'.join(combine_chunks))
+                lengthened_chunks.append('\n\n'.join(combine_chunks))
                 combine_chunks = []
-            elif len(chunk) == 0:
-                continue
             else:
-               new_chunks.append(chunk)
+                lengthened_chunks.append(chunk)
 
-    # Ensure any remaining chunks in combine_chunks are added to new_chunks
-    if len(combine_chunks) > 0:
-        new_chunks.append('\n\n'.join(combine_chunks))
+    if combine_chunks:
+        lengthened_chunks.append('\n\n'.join(combine_chunks))
 
-    return new_chunks
+    return lengthened_chunks
         
-
 def create_embedding(
     chunk: str,
     client: Callable,
@@ -118,38 +117,87 @@ def consolidate_similar_chunks(
     
     return similar_chunks
 
-def query_chunks(
-    query: str,
-    client: Callable,
-    chunks: list[str], 
-    chunk_embeddings: list[list[float]], 
-    model_choice: str = "text-embedding-3-small",
-    threshold: float = 0.5
-) -> list[str]:
-    """
-    Query chunks based on a text query to find similar chunks.
+def create_chunks_with_metadata(
+    source: str,
+    chunks: list[str],
+    chunk_embeddings: list[list[float]],
+    additional_metadata: dict = {}
+) -> list[dict]:
+    return [
+        {
+            "source": source,
+            "text": chunk,
+            "embedding": chunk_embeddings[i],
+            **additional_metadata
+        } for i, chunk in enumerate(chunks)
+    ]
 
-    Args:
-    query (str): The query string.
-    chunks (list of str): The list of text chunks.
-    chunk_embeddings (list of list[float]): The list of embeddings corresponding to the chunks.
-    threshold (float): The similarity threshold to consider a chunk as similar.
-
-    Returns:
-    list of str: A list of chunks that are similar to the query.
-    """
-    # Generate embedding for the query
+def query_chunks_with_metadata(
+        query: str,
+        chunks_with_metadata: list[dict], 
+        client: Callable,
+        model_choice: str = "text-embedding-3-large",
+        threshold: float = 0.4,
+        max_returned_chunks: int = 10,
+) -> list[dict]:
     query_embedding = create_embedding(query, client, model_choice)
 
-    # Find similar chunks
     similar_chunks = []
-    for chunk, embedding in zip(chunks, chunk_embeddings):
-        similarity = cosine_similarity(query_embedding, embedding)
+    for chunk in chunks_with_metadata:
+        similarity = cosine_similarity(query_embedding, chunk['embedding'])
         if similarity > threshold:
-            similar_chunks.append([chunk, similarity])
+            chunk['similarity'] = similarity
+            similar_chunks.append(chunk)
+        
+    similar_chunks.sort(key=lambda x: x['similarity'], reverse=True)
+    top_chunks = similar_chunks[0:max_returned_chunks]
+    no_embedding_key_chunks = [{k: v for k, v in chunk.items() if k != 'embedding'} for chunk in top_chunks]
+    
+    return no_embedding_key_chunks
 
-    return similar_chunks
+def llm_response_with_query(
+    question: str,
+    chunks_with_metadata: list[dict],
+    query_client: Callable = openai_client(),
+    query_model: str = "text-embedding-3-large",
+    threshold: float = 0.4,
+    max_query_chunks: int = 3,
+    llm_function: Callable = openai_text_response,
+    llm_model: str = "4o",
+):
+    query_response = query_chunks_with_metadata(
+        query=question, 
+        chunks_with_metadata=chunks_with_metadata,
+        client=query_client, 
+        model_choice=query_model, 
+        threshold=threshold,
+        max_returned_chunks=max_query_chunks
+    )
+    print(f"QUERY RESPONSE:\n\n{query_response}\n\n")
 
+    if len(query_response) == 0:
+        return "Sources are not relevant enough to answer this question"
+
+    sources = ""
+    for chunk in query_response:
+        sources += f"""
+        Source: '{chunk['source']}',
+        Text: '{chunk['text']}'
+        """
+
+    prompt = f"Question: {question}\n\nSources: {sources}"
+
+    llm_system_prompt = f"""
+    You are an expert at incorporating information from sources to provide answers. 
+    Cite from the sources that are given to you in your answers.
+    """
+    response = llm_function(
+        prompt, 
+        system_instructions=llm_system_prompt, 
+        model_choice=llm_model,
+    )
+
+    return response
 
 if __name__ == "__main__":
     # Example usage
@@ -158,7 +206,6 @@ if __name__ == "__main__":
     end_date_input = "June 6, 2024"
 
     if False:
-        
         feed_entries = return_entries_by_date(feed_url, start_date_input, end_date_input)
         write_string_to_file("mfm_feed.txt", json.dumps(feed_entries, indent=4))
     else:
@@ -166,6 +213,7 @@ if __name__ == "__main__":
         feed_entries = json.loads(feed_entries)
 
     episode = feed_entries[0]
+    episode_title = episode['title']
 
     if False:
         audio_file_path = download_podcast_audio(episode['url'], episode['title'])
@@ -203,30 +251,25 @@ if __name__ == "__main__":
         similar_chunk_embeddings = retrieve_string_from_file("similar_chunk_embeddings.txt")
         similar_chunk_embeddings = json.loads(similar_chunk_embeddings)
 
-    print(f"type(similar_chunk_embeddings): {type(similar_chunk_embeddings)}")
-    print(f"len(chunks): {len(chunks)}")
-    print(f"len(lengthened_chunks): {len(lengthened_chunks)}")
     print(f"len(similar_chunks): {len(similar_chunks)}")
     print(f"len(similar_chunk_embeddings): {len(similar_chunk_embeddings)}")
+    print(f"type(similar_chunks): {type(similar_chunks)}")
+    print(f"type(similar_chunk_embeddings): {type(similar_chunk_embeddings[0])}")
 
-    model_choice = "text-embedding-3-large"
-    query = "What are current business trends?"
-    query_response = query_chunks(
-        query=query, 
-        client=client, 
-        model_choice=model_choice, 
-        chunks=similar_chunks, 
-        chunk_embeddings=similar_chunk_embeddings, 
-        threshold=.25
+    chunks_with_metadata = create_chunks_with_metadata(
+        source=episode_title,
+        chunks=similar_chunks,
+        chunk_embeddings=similar_chunk_embeddings
     )
-    sorted_query_response = sorted(query_response, key=lambda x: x[1], reverse=True)[:5]
-    complete_query_response = ""
-    for count, chunk in enumerate(sorted_query_response):
-        complete_query_response += f"Source {count+1}\n{10*'-'}\n{chunk[0]}\n\n"
 
-    system_prompt = "You are an expert at answering questions. Use information from sources to provide answers."
-    prompt = f"{query}\n\n{complete_query_response}"
-    print(f"{10*'-'}\n{prompt}\n{10*'-'}\n")
-    response = openai_text_response(prompt, system_prompt, model_choice="4o")
+    question = "What is their advice around raising a family?"
+
+    response = llm_response_with_query(
+        question=question,
+        chunks_with_metadata=chunks_with_metadata,
+        llm_function=anthropic_text_response,
+        llm_model="sonnet",
+        max_query_chunks=8,
+        threshold=0.25
+    )
     print(f"\n\n{response}\n\n")
-    
