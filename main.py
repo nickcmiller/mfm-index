@@ -9,10 +9,13 @@ import os
 import logging
 
 import asyncio
+from asyncio import Semaphore
 from concurrent.futures import ThreadPoolExecutor
+
 from tqdm import tqdm
 import numpy as np
-from typing import Callable, List, Dict, Optional
+from typing import Callable, List, Dict, Optional, AsyncIterator
+import time
 
 client = openai_client()
 
@@ -203,65 +206,79 @@ def llm_response_with_query(
 
     return response
 
-async def download_multiple_episodes_by_date(
+async def download_and_transcribe_multiple_episodes_by_date(
     feed_url: str,
     start_date: str,
     end_date: str,
     download_dir_name: Optional[str] = None,
     transcript_dir_name: Optional[str] = None,
-    new_transcript_dir_name: Optional[str] = None
+    new_transcript_dir_name: Optional[str] = None,
+    max_concurrent_tasks: int = 5,
+    max_retries: int = 3,
+    retry_delay: float = 1.0
 ) -> List[Dict[str, str]]:
     feed_entries = return_entries_by_date(feed_url, start_date, end_date)
     updated_entries = []
-
+    semaphore = Semaphore(max_concurrent_tasks)
+    
     logging.info(f"Downloading {len(feed_entries)} episodes")
 
     async def process_entry(entry: Dict[str, str]) -> Dict[str, str]:
-        try:
-            audio_file_path = await asyncio.to_thread(
-                download_podcast_audio, 
-                entry['url'], 
-                entry['title'], 
-                download_dir_name=download_dir_name
-            )
-            entry['audio_file_path'] = audio_file_path
-            entry['audio_summary'] = await asyncio.to_thread(
-                generate_audio_summary, 
-                entry['summary'], 
-                entry['feed_summary']
-            )
-            entry['raw_transcript'] = await asyncio.to_thread(
-                generate_assemblyai_transcript, 
-                entry['audio_file_path'], 
-                output_dir_name=transcript_dir_name
-            )
-            entry['transcript'] = await asyncio.to_thread(
-                replace_assemblyai_speakers, 
-                entry['raw_transcript'], 
-                entry['audio_summary'],
-                output_file_name=entry['title'],
-                output_dir_name=new_transcript_dir_name
-            )
-            return entry
-        except Exception as e:
-            logging.error(f"Error processing entry {entry['title']}: {str(e)}")
-            return None
+        async with semaphore:
+            for attempt in range(max_retries):
+                try:
+                    audio_file_path = await asyncio.to_thread(
+                        download_podcast_audio, 
+                        entry['url'], 
+                        entry['title'], 
+                        download_dir_name=download_dir_name
+                    )
+                    entry['audio_file_path'] = audio_file_path
 
-    with ThreadPoolExecutor() as executor:
-        tasks = [asyncio.create_task(process_entry(entry)) for entry in feed_entries]
-        for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc=f"\n\nProcessing episodes"):
-            result = await task
-            if result:
-                updated_entries.append(result)
+                    entry['audio_summary'] = await asyncio.to_thread(
+                        generate_audio_summary, 
+                        entry['summary'], 
+                        entry['feed_summary']
+                    )
+
+                    entry['raw_transcript'] = await asyncio.to_thread(
+                        generate_assemblyai_transcript, 
+                        entry['audio_file_path'], 
+                        output_dir_name=transcript_dir_name
+                    )
+
+                    entry['transcript'] = await asyncio.to_thread(
+                        replace_assemblyai_speakers, 
+                        entry['raw_transcript'], 
+                        entry['audio_summary'],
+                        output_file_name=entry['title'],
+                        output_dir_name=new_transcript_dir_name
+                    )
+
+                    return entry
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logging.warning(f"Error processing entry {entry['title']}, attempt {attempt + 1}: {str(e)}")
+                        await asyncio.sleep(retry_delay * (2 ** attempt))
+                    else:
+                        logging.error(f"Failed to process entry {entry['title']} after {max_retries} attempts: {str(e)}")
+                        return None
+
+    tasks = [asyncio.create_task(process_entry(entry)) for entry in feed_entries]
+    
+    for task in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Processing episodes"):
+        entry = await task
+        if entry:
+            updated_entries.append(entry)
 
     logging.info(f"Successfully processed {len(updated_entries)} out of {len(feed_entries)} episodes")
     return updated_entries
 
 
 async def main():
-    feed_url = "https://feeds.megaphone.fm/HS2300184645"
+    feed_url = "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ"
     start_date_input = "June 1, 2024"
-    end_date_input = "June 4, 2024"
+    end_date_input = "June 5, 2024"
     download_dir_name = "tmp_audio"
     transcript_dir_name = "tmp_transcripts"
     new_transcript_dir_name = "tmp_new_transcripts"
@@ -284,7 +301,7 @@ async def main():
    
 
 if __name__ == "__main__":
-    # asyncio.run(main())
+    asyncio.run(main())
 
     # chunks = split_text_string(replaced_transcript, "\n\n")
     # lengthened_chunks = consolidate_short_chunks(chunks, 100)
