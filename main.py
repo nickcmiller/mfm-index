@@ -4,8 +4,6 @@ from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai
 from genai_toolbox.clients.openai_client import openai_client
 from genai_toolbox.text_prompting.model_calls import openai_text_response, anthropic_text_response
 
-
-
 import json
 import os
 import logging
@@ -209,15 +207,14 @@ async def download_multiple_episodes_by_date(
     feed_url: str,
     start_date: str,
     end_date: str,
-    download_path: Optional[str] = None
+    download_dir_name: Optional[str] = None,
+    transcript_dir_name: Optional[str] = None,
+    new_transcript_dir_name: Optional[str] = None
 ) -> List[Dict[str, str]]:
     feed_entries = return_entries_by_date(feed_url, start_date, end_date)
     updated_entries = []
-    if download_path and not os.path.exists(download_path):
-        os.makedirs(download_path)
 
     logging.info(f"Downloading {len(feed_entries)} episodes")
-    
 
     async def process_entry(entry: Dict[str, str]) -> Dict[str, str]:
         try:
@@ -225,13 +222,25 @@ async def download_multiple_episodes_by_date(
                 download_podcast_audio, 
                 entry['url'], 
                 entry['title'], 
-                download_path
+                download_dir_name=download_dir_name
             )
             entry['audio_file_path'] = audio_file_path
             entry['audio_summary'] = await asyncio.to_thread(
                 generate_audio_summary, 
                 entry['summary'], 
                 entry['feed_summary']
+            )
+            entry['raw_transcript'] = await asyncio.to_thread(
+                generate_assemblyai_transcript, 
+                entry['audio_file_path'], 
+                output_dir_name=transcript_dir_name
+            )
+            entry['transcript'] = await asyncio.to_thread(
+                replace_assemblyai_speakers, 
+                entry['raw_transcript'], 
+                entry['audio_summary'],
+                output_file_name=entry['title'],
+                output_dir_name=new_transcript_dir_name
             )
             return entry
         except Exception as e:
@@ -252,40 +261,30 @@ async def download_multiple_episodes_by_date(
 async def main():
     feed_url = "https://feeds.megaphone.fm/HS2300184645"
     start_date_input = "June 1, 2024"
-    end_date_input = "June 10, 2024"
-    download_path = os.path.join(os.getcwd(), "tmp_audio/")
+    end_date_input = "June 4, 2024"
+    download_dir_name = "tmp_audio"
+    transcript_dir_name = "tmp_transcripts"
+    new_transcript_dir_name = "tmp_new_transcripts"
 
     if True:
-        updated_entries = await download_multiple_episodes_by_date(
+        updated_entries = await download_and_transcribe_multiple_episodes_by_date(
             feed_url=feed_url,
             start_date=start_date_input,
             end_date=end_date_input,
-            download_path=download_path
+            download_dir_name=download_dir_name,
+            transcript_dir_name=transcript_dir_name,
+            new_transcript_dir_name=new_transcript_dir_name
         )
         write_string_to_file("mfm_feed.txt", json.dumps(updated_entries, indent=4))
     else:
         updated_entries = retrieve_string_from_file("mfm_feed.txt")
         updated_entries = json.loads(updated_entries)
+
+    
    
 
 if __name__ == "__main__":
-    asyncio.run(main())
-
-
-    # if False:
-    #     audio_file_path = download_podcast_audio(episode['url'], episode['title'])
-    #     assemblyai_transcript = generate_assemblyai_transcript(audio_file_path, "assemblyai_transcript.txt")
-    #     write_string_to_file("assemblyai_transcript.txt", assemblyai_transcript)
-    # else:
-    #     assemblyai_transcript = retrieve_string_from_file("assemblyai_transcript.txt")
-
-
-    # if False:
-    #     summary_text = generate_audio_summary(episode['summary'], episode['feed_summary'])
-    #     replaced_transcript = replace_assemblyai_speakers(assemblyai_transcript, summary_text)
-    #     write_string_to_file("replaced_transcript.txt", replaced_transcript)
-    # else:
-    #     replaced_transcript = retrieve_string_from_file("replaced_transcript.txt")
+    # asyncio.run(main())
 
     # chunks = split_text_string(replaced_transcript, "\n\n")
     # lengthened_chunks = consolidate_short_chunks(chunks, 100)
