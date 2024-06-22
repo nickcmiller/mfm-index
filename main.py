@@ -90,6 +90,15 @@ def create_embedding(
         Returns:
         dict: A dictionary containing the original text, its corresponding embedding, and all other key-value pairs from the input dictionary.
     """
+    if 'text' not in chunk_dict:
+        raise KeyError("The 'text' key is missing from the chunk_dict.")
+    
+    if not chunk_dict['text']:
+        raise ValueError("The 'text' value in chunk_dict is empty.")
+
+    if not isinstance(client, Callable):
+        raise ValueError("The 'client' argument must be a callable object.")
+
     text = chunk_dict['text']
     response = client.embeddings.create(
         input=text, 
@@ -163,17 +172,24 @@ def consolidate_similar_split_chunks(
 
 def create_chunks_with_metadata(
     source: str,
-    chunks: list[str],
-    chunk_embeddings: list[list[float]],
+    chunks: list[dict],
     additional_metadata: dict = {}
 ) -> list[dict]:
+
+    if not source:
+        raise ValueError("Source must be provided")
+
+    if not all('embedding' in chunk and 'text' in chunk for chunk in chunks):
+        raise ValueError("Each chunk must contain both 'embedding' and 'text' keys")
+
     return [
         {
             "source": source,
-            "text": chunk,
-            "embedding": chunk_embeddings[i],
-            **additional_metadata
-        } for i, chunk in enumerate(chunks)
+            "text": chunk["text"],
+            "embedding": chunk["embedding"],
+            **additional_metadata,
+            **{k: v for k, v in chunk.items() if k not in ["text", "embedding"]}
+        } for chunk in chunks
     ]
 
 def query_chunks_with_metadata(
