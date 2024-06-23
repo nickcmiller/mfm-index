@@ -194,7 +194,7 @@ def create_chunks_with_metadata(
 
 def query_chunks_with_metadata(
     query: str,
-    chunks_with_metadata: list[dict], 
+    chunks_with_embeddings: list[dict], 
     client: Callable,
     model_choice: str = "text-embedding-3-large",
     threshold: float = 0.4,
@@ -203,7 +203,7 @@ def query_chunks_with_metadata(
     query_embedding = create_embedding(query, client, model_choice)
 
     similar_chunks = []
-    for chunk in chunks_with_metadata:
+    for chunk in chunks_with_embeddings:
         similarity = cosine_similarity(query_embedding, chunk['embedding'])
         if similarity > threshold:
             chunk['similarity'] = similarity
@@ -217,7 +217,7 @@ def query_chunks_with_metadata(
 
 def llm_response_with_query(
     question: str,
-    chunks_with_metadata: list[dict],
+    chunks_with_embeddings: list[dict],
     query_client: Callable = openai_client(),
     query_model: str = "text-embedding-3-large",
     threshold: float = 0.4,
@@ -227,7 +227,7 @@ def llm_response_with_query(
 ):
     query_response = query_chunks_with_metadata(
         query=question, 
-        chunks_with_metadata=chunks_with_metadata,
+        chunks_with_embeddings=chunks_with_embeddings,
         client=query_client, 
         model_choice=query_model, 
         threshold=threshold,
@@ -356,9 +356,6 @@ async def main():
     else:
         updated_entries = retrieve_file("podcast_feed.txt", dir_name="tmp")
         updated_entries = json.loads(updated_entries)
-
-    
-   
 
 if __name__ == "__main__":
     # asyncio.run(main())
