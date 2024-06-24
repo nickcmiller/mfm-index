@@ -1,7 +1,8 @@
+from genai_toolbox.clients.openai_client import openai_client
+from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding, cosine_similarity, embed_dict_list
 from genai_toolbox.download_sources.podcast_functions import return_entries_by_date, download_podcast_audio, generate_episode_summary
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file, evaluate_and_clean_valid_response
 from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_utterances, replace_speakers_in_assemblyai_utterances
-from genai_toolbox.clients.openai_client import openai_client
 from genai_toolbox.text_prompting.model_calls import openai_text_response, anthropic_text_response
 
 import json
@@ -18,7 +19,7 @@ from typing import Callable, List, Dict, Optional, AsyncIterator
 import time
 
 client = openai_client()
-
+# Splitting Transcript into Chunks
 def split_text_string(
     text: str, 
     separator: str
@@ -38,7 +39,7 @@ def split_text_string(
 
 def consolidate_split_chunks(
     chunk_dicts: list[dict], 
-    max_length: int = 75
+    min_length: int = 75
 ) -> list[dict]:
     """
         Combines consecutive chunks of text that are shorter than `max_length`.
@@ -59,7 +60,7 @@ def consolidate_split_chunks(
         if len(chunk) == 0:
             continue
 
-        if len(chunk) < max_length:
+        if len(chunk) < min_length:
             combine_chunks.append(chunk)
         else:
             if combine_chunks:
@@ -74,56 +75,6 @@ def consolidate_split_chunks(
 
     return lengthened_chunk_dicts
         
-def create_embedding(
-    chunk_dict: dict,
-    client: Callable,
-    model_choice: str = "text-embedding-3-small"
-) -> dict:
-    """
-        Creates an embedding for the text in the given dictionary using the specified model and retains all other key-value pairs.
-
-        Args:
-        chunk_dict (dict): A dictionary containing the text to embed under the key 'text' and possibly other data.
-        client (Callable): The client used to create embeddings.
-        model_choice (str): The model identifier to use for embedding generation.
-
-        Returns:
-        dict: A dictionary containing the original text, its corresponding embedding, and all other key-value pairs from the input dictionary.
-    """
-    if 'text' not in chunk_dict:
-        raise KeyError("The 'text' key is missing from the chunk_dict.")
-    
-    if not chunk_dict['text']:
-        raise ValueError("The 'text' value in chunk_dict is empty.")
-
-    if not isinstance(client, Callable):
-        raise ValueError("The 'client' argument must be a callable object.")
-
-    text = chunk_dict['text']
-    response = client.embeddings.create(
-        input=text, 
-        model=model_choice
-    )
-    embedding = response.data[0].embedding
-    # Create a new dictionary that includes the embedding and all other existing data
-    result_dict = {**chunk_dict, "embedding": embedding}
-    return result_dict
-
-def embed_chunk_dict_list(
-    chunk_dicts: list[dict],
-    client: Callable,
-    model_choice: str = "text-embedding-3-small"
-) -> list[dict]:
-    return [create_embedding(chunk_dict, client, model_choice) for chunk_dict in chunk_dicts]
-
-def cosine_similarity(
-    vec1: list[float], 
-    vec2: list[float]
-):
-    vec1 = np.array(vec1)
-    vec2 = np.array(vec2)
-    return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
-
 def consolidate_similar_split_chunks(
     chunks: list[dict],
     threshold: float = 0.45,
@@ -169,6 +120,9 @@ def consolidate_similar_split_chunks(
         similar_chunks.append({"text": '\n\n'.join(current_chunk)})
     
     return similar_chunks
+
+#
+
 
 def create_chunks_with_metadata(
     source: str,
@@ -357,9 +311,128 @@ async def main():
         updated_entries = json.loads(updated_entries)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # asyncio.run(main())
 
-    # transcript = retrieve_file(
-    #     file="Computex_2024_replaced.txt", 
-    #     dir_name="tmp_new_transcripts"
-    # )
+    utterances_dict = retrieve_file(
+        file="Computex_2024_replaced.json", 
+        dir_name="tmp_new_transcripts"
+    )
+    transcribed_utterances = utterances_dict['transcribed_utterances']
+
+    """
+    Example utterance:
+        {
+            "confidence": 0.9069812500000001,
+            "end": 8374,
+            "speaker": "John Gruber",
+            "start": 2000,
+            "text": "Ben, it's conference time of the year, and for once the world is traveling to you."
+        },
+    """
+    def consolidate_short_assemblyai_utterances(
+        transcribed_utterances: list[dict],
+        min_length: int = 75
+    ) -> list[dict]:
+        lengthened_utterances = []
+        combine_text = []
+        current_start = None
+        current_speakers = []
+
+        for utterance in transcribed_utterances:
+            
+            current_text = utterance['text'].strip()
+            if not current_text:
+                continue
+
+            if current_start is None:
+                current_start = utterance['start']
+
+            current_speakers.append(utterance['speaker'])
+            first_name_initial_in_speakers = utterance['speaker'].split(' ')[0][0]
+            last_name_initial_in_speakers = utterance['speaker'].split(' ')[1][0]
+            formatted_text = f"{{{len(current_speakers)}}}: {current_text}"
+
+            if len(current_text) < min_length:
+                combine_text.append(formatted_text)
+            else:
+                if combine_text:
+                    combine_text.append(formatted_text)
+                    lengthened_utterances.append({
+                        "start": current_start,
+                        "end": utterance['end'],
+                        "speakers": list(current_speakers),
+                        "text": '\n\n'.join(combine_text),
+                    })
+                    combine_text = []
+                else:
+                    lengthened_utterances.append({
+                        "start": current_start,
+                        "end": utterance['end'],
+                        "speakers": list(current_speakers),
+                        "text": current_text,
+                    })
+                current_speakers = []
+                current_start = None
+
+        if combine_text:
+            lengthened_utterances.append({
+                "start": current_start,
+                "end": transcribed_utterances[-1]['end'],
+                "speakers": list(current_speakers),
+                "text": '\n\n'.join(combine_text)
+            })
+    
+        return lengthened_utterances
+
+    def add_similarity_to_next_item(
+        chunk_dicts: list[dict],
+        similarity_metric: Callable = cosine_similarity
+    ) -> list[dict]:
+        """
+            Adds a 'similarity_to_next_item' key to each dictionary in the list,
+            calculating the cosine similarity between the current item's embedding
+            and the next item's embedding. The last item's similarity is always 0.
+
+            Args:
+                chunk_dicts (list[dict]): List of dictionaries containing 'embedding' key.
+
+            Returns:
+                list[dict]: The input list with added 'similarity_to_next_item' key for each dict.
+        """
+        for i in range(len(chunk_dicts) - 1):
+            current_embedding = chunk_dicts[i]['embedding']
+            next_embedding = chunk_dicts[i + 1]['embedding']
+            similarity = cosine_similarity(current_embedding, next_embedding)
+            chunk_dicts[i]['similarity_to_next_item'] = similarity
+
+        # similarity_to_next_item for the last item is always 0
+        chunk_dicts[-1]['similarity_to_next_item'] = 0
+
+        return chunk_dicts
+
+                    
+    consolidated_utterances = consolidate_short_assemblyai_utterances(transcribed_utterances, min_length=100)
+    print(f"Length of transcribed utterances: {len(transcribed_utterances)}")
+    print(f"Length of consolidated utterances: {len(consolidated_utterances)}")
+
+    if False:
+        embedded_utterances = embed_dict_list(
+            embedding_function=create_openai_embedding,
+            chunk_dicts=consolidated_utterances, 
+            key_to_embed="text",
+            model_choice="text-embedding-3-large"
+        )
+        similar_utterances = add_similarity_to_next_item(embedded_utterances)
+        write_to_file(
+            content=similar_utterances,
+            file="embedded_utterances.json",
+            output_dir_name="tmp"
+        )
+    else:
+        embedded_utterances = retrieve_file(
+            file="embedded_utterances.json", 
+            dir_name="tmp"
+        )
+    for utterance in embedded_utterances:
+        print(utterance['similarity_to_next_item'])
+ 
