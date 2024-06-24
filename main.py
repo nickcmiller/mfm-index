@@ -1,6 +1,6 @@
 from genai_toolbox.download_sources.podcast_functions import return_entries_by_date, download_podcast_audio, generate_episode_summary
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file, evaluate_and_clean_valid_response
-from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_transcript, replace_speakers_in_assemblyai_transcript
+from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_utterances, replace_speakers_in_assemblyai_utterances
 from genai_toolbox.clients.openai_client import openai_client
 from genai_toolbox.text_prompting.model_calls import openai_text_response, anthropic_text_response
 
@@ -292,18 +292,17 @@ async def download_and_transcribe_multiple_episodes_by_date(
                 )
                 pbar.set_postfix({"stage": "summary generated"})
                 
-                entry['raw_transcript'] = await asyncio.to_thread(
-                    generate_assemblyai_transcript, 
+                entry['utterances_dict'] = await asyncio.to_thread(
+                    generate_assemblyai_utterances,
                     entry['audio_file_path'], 
                     output_dir_name=transcript_dir_name
                 )
                 pbar.set_postfix({"stage": "raw transcript generated"})
                 
                 entry['transcript'] = await asyncio.to_thread(
-                    replace_speakers_in_assemblyai_transcript, 
-                    entry['raw_transcript'], 
+                    replace_speakers_in_assemblyai_utterances, 
+                    entry['utterances_dict'], 
                     entry['audio_summary'],
-                    output_file_name=entry['title'],
                     output_dir_name=new_transcript_dir_name
                 )
                 pbar.set_postfix({"stage": "transcript processed"})
@@ -358,46 +357,9 @@ async def main():
         updated_entries = json.loads(updated_entries)
 
 if __name__ == "__main__":
-    # asyncio.run(main())
+    asyncio.run(main())
 
-    transcript = retrieve_file(
-        file="Computex_2024_replaced.txt", 
-        dir_name="tmp_new_transcripts"
-    )
-    split_chunks = split_text_string(transcript, "\n\n")
-    print(f"len(split_chunks): {len(split_chunks)}")
-    lengthened_chunks = consolidate_split_chunks(split_chunks, 75)
-    print(f"len(lengthened_chunks): {len(lengthened_chunks)}")
-    
-    if True:
-        embedded_chunk_dicts = embed_chunk_dict_list(lengthened_chunks, client=client)
-        write_to_file(
-            content=embedded_chunk_dicts,
-            file="embedded_chunk_dicts.json",
-            output_dir_name="tmp"
-        )
-    else:
-        embedded_chunk_dicts = retrieve_file(
-            file="embedded_chunk_dicts.json", 
-            dir_name="tmp"
-        )
-    
-    if True:
-        consolidated_similar_chunks = consolidate_similar_split_chunks(embedded_chunk_dicts, threshold=0.55)
-        write_to_file(
-            content=consolidated_similar_chunks,
-            file="consolidated_similar_chunks.json",
-            output_dir_name="tmp"
-        )
-    else:
-        consolidated_similar_chunks = retrieve_file(
-            file="consolidated_similar_chunks.json", 
-            dir_name="tmp"
-        )
-    print(f"len(consolidated_similar_chunks): {len(consolidated_similar_chunks)}")
-    # if False:
-    #     model_choice = "text-embedding-3-large"
-    #     similar_chunk_embeddings = embed_string_list(similar_chunks, client, model_choice)
-    # else:
-    #     similar_chunk_embeddings = retrieve_string_from_file("similar_chunk_embeddings.txt")
-    #     similar_chunk_embeddings = json.loads(similar_chunk_embeddings)
+    # transcript = retrieve_file(
+    #     file="Computex_2024_replaced.txt", 
+    #     dir_name="tmp_new_transcripts"
+    # )
