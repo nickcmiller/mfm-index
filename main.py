@@ -76,51 +76,6 @@ def consolidate_split_chunks(
 
     return lengthened_chunk_dicts
         
-def consolidate_similar_split_chunks(
-    chunks: list[dict],
-    threshold: float = 0.45,
-    similarity_metric: Callable = cosine_similarity
-) -> list[dict]:
-    """
-        Consolidates similar chunks based on their embeddings.
-
-        Args:
-            chunks (list[dict]): List of dictionaries, each containing 'text' and 'embedding' keys.
-            threshold (float): Similarity threshold for consolidation.
-            similarity_metric (Callable): Function to compute similarity between embeddings.
-
-        Returns:
-            list[dict]: Consolidated list of dictionaries, each with a 'text' key.
-    """
-    current_chunk = []
-    similar_chunks = []
-    used_indices = set()
-    
-    for i in range(len(chunks)):
-        if i in used_indices:
-            continue
-        current_chunk = [chunks[i]['text']]
-        similar_found = False
-        for j in range(i + 1, len(chunks)):
-            if j in used_indices:
-                continue
-            similarity = similarity_metric(chunks[i]['embedding'], chunks[j]['embedding'])
-            if similarity > threshold:
-                current_chunk.append(chunks[j]['text'])
-                used_indices.add(j)
-                similar_found = True
-            else:
-                if len(current_chunk) > 1:
-                    similar_chunks.append({"text": '\n\n'.join(current_chunk)})
-                break      
-        if similar_found is False:
-            similar_chunks.append({"text": chunks[i]['text']})
-        used_indices.add(i)
-    
-    if len(current_chunk) > 0:
-        similar_chunks.append({"text": '\n\n'.join(current_chunk)})
-    
-    return similar_chunks
 
 def add_metadata_to_chunks(
     chunks: list[dict],
@@ -141,6 +96,206 @@ def add_metadata_to_chunks(
             **{k: v for k, v in chunk.items() if k not in ["text", "embedding"]}
         } for chunk in chunks
     ]
+
+# Chunking utterances
+
+def convert_speaker_to_speakers(
+    utterances: list[dict]
+) -> list[dict]:
+
+    mod_utterances = []
+    for utterance in utterances:
+        speakers = [utterance['speaker']]
+        mod_utterances.append({
+            **{k: v for k, v in utterance.items() if k != 'speaker'},
+            "speakers": speakers
+        })
+        
+    return mod_utterances
+
+
+def consolidate_short_assemblyai_utterances(
+    utterances: list[dict],
+    min_length: int = 75
+) -> list[dict]:
+    """
+        Consolidates short utterances from AssemblyAI transcription into longer segments.
+
+            Args:
+                utterances (list[dict]): A list of dictionaries, each representing an utterance
+                    with keys 'confidence', 'end', 'speaker', 'start', and 'text'.
+            min_length (int, optional): The minimum length of text to be considered a
+                standalone utterance. Defaults to 75 characters.
+
+        Returns:
+            list[dict]: A list of consolidated utterances.
+    """
+    consolidated = []
+    current_group = None
+
+    def finalize_group():
+        if current_group:
+            if len(set(current_group["speakers"])) > 1:
+                text = "\n\n".join(f"{{}}: {t}" for t in current_group["texts"])
+            else:
+                text = current_group["texts"][0]
+            
+            consolidated.append({
+                "start": current_group["start"],
+                "end": current_group["end"],
+                "speakers": current_group["speakers"],
+                "text": text,
+            })
+
+    for utterance in utterances:
+        utterance_text = utterance['text'].strip()
+        if not utterance_text:
+            continue
+
+        if current_group is None:
+            current_group = {
+                "start": utterance['start'],
+                "end": utterance['end'],
+                "speakers": [utterance['speaker']],
+                "texts": [utterance_text],
+            }
+        else:
+            current_group["end"] = utterance['end']
+            current_group["speakers"].append(utterance['speaker'])
+            current_group["texts"].append(utterance_text)
+
+        if len(utterance_text) >= min_length:
+            finalize_group()
+            current_group = None
+
+    finalize_group()  # Handle the last group if exists
+
+    return consolidated
+
+
+# Combine similar chunks
+
+def add_similarity_to_next_item(
+    chunk_dicts: list[dict],
+    similarity_metric: Callable = cosine_similarity
+) -> list[dict]:
+    """
+        Adds a 'similarity_to_next_item' key to each dictionary in the list,
+        calculating the cosine similarity between the current item's embedding
+        and the next item's embedding. The last item's similarity is always 0.
+
+        Args:
+            chunk_dicts (list[dict]): List of dictionaries containing 'embedding' key.
+
+        Returns:
+            list[dict]: The input list with added 'similarity_to_next_item' key for each dict.
+
+        Example:
+            Input:
+            [
+                {..., "embedding": [0.1, 0.2, 0.3]},
+                {..., "embedding": [0.4, 0.5, 0.6]},
+            ]
+            Output:
+            [
+                {..., "embedding": [0.1, 0.2, 0.3], "similarity_to_next_item": 0.9},
+                {..., "embedding": [0.4, 0.5, 0.6], "similarity_to_next_item": 0.9},
+            ]
+    """
+    for i in range(len(chunk_dicts) - 1):
+        current_embedding = chunk_dicts[i]['embedding']
+        next_embedding = chunk_dicts[i + 1]['embedding']
+        similarity = cosine_similarity(current_embedding, next_embedding)
+        chunk_dicts[i]['similarity_to_next_item'] = similarity
+
+    # similarity_to_next_item for the last item is always 0
+    chunk_dicts[-1]['similarity_to_next_item'] = 0
+
+    return chunk_dicts
+
+def consolidate_similar_split_chunks(
+    chunks: list[dict], 
+    threshold: float = 0.45
+) -> list[dict]:
+    """
+    Consolidates similar chunks based on their precomputed 'similarity_to_next_item'.
+
+    Args:
+        chunks (list[dict]): List of dictionaries, each containing 'text' and 'similarity_to_next_item' keys.
+        threshold (float): Similarity threshold for consolidation.
+
+    Returns:
+        list[dict]: Consolidated list of dictionaries, each with a 'text' key.
+    """
+    consolidated_chunks = []
+    current_chunk_texts = []
+
+    for i, chunk in enumerate(chunks):
+        current_chunk_texts.append(chunk['text'])
+
+        if chunk['similarity_to_next_item'] < threshold or i == len(chunks) - 1:
+            consolidated_chunks.append({"text": '\n\n'.join(current_chunk_texts)})
+            current_chunk_texts = []
+
+    return consolidated_chunks
+
+def consolidate_similar_utterances(
+    utterances: list[dict],
+    similarity_threshold: float = 0.45
+) -> list[dict]:
+    """
+        Consolidates similar utterances based on their similarity to the next item.
+
+        Args:
+            utterances (list[dict]): List of utterances, each containing 'text', 'speakers', 
+                                    'similarity_to_next_item', and other fields.
+            similarity_threshold (float): Threshold for considering utterances similar.
+
+        Returns:
+            list[dict]: Consolidated list of utterances.
+    """
+    consolidated = []
+    current_group = None
+
+    def finalize_group():
+        if current_group:
+            consolidated.append({
+                "start": current_group["start"],
+                "end": current_group["end"],
+                "speakers": current_group["speakers"],
+                "text": "\n\n".join(current_group["texts"]),
+            })
+
+    def format_text(text, speakers):
+        return f"{{}}: {text}" if len(speakers) == 1 else text
+
+    for utterance in utterances:
+        utterance_text = utterance['text'].strip()
+        if not utterance_text:
+            continue
+
+        formatted_text = format_text(utterance_text, utterance['speakers'])
+
+        if current_group is None:
+            current_group = {
+                "start": utterance['start'],
+                "end": utterance['end'],
+                "speakers": utterance['speakers'].copy(),
+                "texts": [formatted_text],
+            }
+        else:
+            current_group["end"] = utterance['end']
+            current_group["speakers"].extend(utterance['speakers'])
+            current_group["texts"].append(formatted_text)
+
+        if utterance['similarity_to_next_item'] < similarity_threshold:
+            finalize_group()
+            current_group = None
+
+    finalize_group()  # Handle the last group if exists
+
+    return consolidated
+    
 
 # Query embeddings
 def query_chunks_with_metadata(
@@ -314,276 +469,63 @@ if __name__ == "__main__":
         dir_name="tmp_new_transcripts"
     )
     transcribed_utterances = utterances_dict['transcribed_utterances']
-
-    def consolidate_short_assemblyai_utterances(
-        utterances: list[dict],
-        min_length: int = 75
-    ) -> list[dict]:
-        """
-            Consolidates short utterances from AssemblyAI transcription into longer segments.
-
-            This function takes a list of transcribed utterances and combines short utterances
-            (less than a specified minimum length) into longer segments. It preserves speaker
-            information and formats the text to include speaker indicators.
-
-            Args:
-                transcribed_utterances (list[dict]): A list of dictionaries, each representing
-                    an utterance with keys 'confidence', 'end', 'speaker', 'start', and 'text'.
-                min_length (int, optional): The minimum length of text to be considered a
-                    standalone utterance. Defaults to 75 characters.
-
-            Returns:
-                list[dict]: A list of consolidated utterances, where each dictionary contains
-                    'start', 'end', 'speakers', and 'text' keys. The 'text' may include multiple
-                    utterances from different speakers, formatted with speaker indicators. 
-                    The function uses {} to indicate different speakers within a consolidated utterance.
-
-            Example:
-                Input:
-                [
-                    {
-                        "start": 0, 
-                        "end": 100, 
-                        "speaker": "Ben", 
-                        "text": "Hello, John!"
-                    },
-                    {
-                        "start": 100, 
-                        "end": 200, 
-                        "speaker": "John", 
-                        "text": "How are you?"
-                    },
-                ]
-                Output:
-                [
-                    {
-                        "start": 0, 
-                        "end": 200, 
-                        "speakers": ["Ben", "John"], 
-                        "text": "{}: Hello, John!\n\n{}: How are you?"
-                    },
-                ]            
-        """
-        lengthened_utterances = []
-        combine_text = []
-        current_start = None
-        current_speakers = []
-
-        for utterance in utterances:
-            utterance_text = utterance['text'].strip()
-            if not utterance_text:
-                continue
-
-            if current_start is None:
-                current_start = utterance['start']
-
-            current_speakers.append(utterance['speaker'])
-            formatted_text = f"{{}}: {utterance_text}"
-
-            if len(utterance_text) < min_length:
-                combine_text.append(formatted_text)
-            else:
-                if combine_text:
-                    combine_text.append(formatted_text)
-                    lengthened_utterances.append({
-                        "start": current_start,
-                        "end": utterance['end'],
-                        "speakers": list(current_speakers),
-                        "text": '\n\n'.join(combine_text),
-                    })
-                else:
-                    lengthened_utterances.append({
-                        "start": current_start,
-                        "end": utterance['end'],
-                        "speakers": list(current_speakers),
-                        "text": utterance_text,
-                    })
-                combine_text = []
-                current_speakers = []
-                current_start = None
-
-        if combine_text:
-            lengthened_utterances.append({
-                "start": current_start,
-                "end": utterances[-1]['end'],
-                "speakers": list(current_speakers),
-                "text": '\n\n'.join(combine_text)
-            })
-    
-        return lengthened_utterances
-
-    def add_similarity_to_next_item(
-        chunk_dicts: list[dict],
-        similarity_metric: Callable = cosine_similarity
-    ) -> list[dict]:
-        """
-            Adds a 'similarity_to_next_item' key to each dictionary in the list,
-            calculating the cosine similarity between the current item's embedding
-            and the next item's embedding. The last item's similarity is always 0.
-
-            Args:
-                chunk_dicts (list[dict]): List of dictionaries containing 'embedding' key.
-
-            Returns:
-                list[dict]: The input list with added 'similarity_to_next_item' key for each dict.
-
-            Example:
-                Input:
-                [
-                    {..., "embedding": [0.1, 0.2, 0.3]},
-                    {..., "embedding": [0.4, 0.5, 0.6]},
-                ]
-                Output:
-                [
-                    {..., "embedding": [0.1, 0.2, 0.3], "similarity_to_next_item": 0.9},
-                    {..., "embedding": [0.4, 0.5, 0.6], "similarity_to_next_item": 0.9},
-                ]
-        """
-        for i in range(len(chunk_dicts) - 1):
-            current_embedding = chunk_dicts[i]['embedding']
-            next_embedding = chunk_dicts[i + 1]['embedding']
-            similarity = cosine_similarity(current_embedding, next_embedding)
-            chunk_dicts[i]['similarity_to_next_item'] = similarity
-
-        # similarity_to_next_item for the last item is always 0
-        chunk_dicts[-1]['similarity_to_next_item'] = 0
-
-        return chunk_dicts
-
+    speakermod_utterances = convert_speaker_to_speakers(transcribed_utterances)
+    print(json.dumps(speakermod_utterances[0], indent=4))
     consolidated_utterances = consolidate_short_assemblyai_utterances(transcribed_utterances, min_length=100)
-    print(f"Length of transcribed utterances: {len(transcribed_utterances)}")
-    print(f"Length of consolidated utterances: {len(consolidated_utterances)}")
-
-    if False:
-        embedded_utterances = embed_dict_list(
-            embedding_function=create_openai_embedding,
-            chunk_dicts=consolidated_utterances, 
-            key_to_embed="text",
-            model_choice="text-embedding-3-large"
-        )
-        
-        write_to_file(
-            content=embedded_utterances,
-            file="embedded_utterances.json",
-            output_dir_name="tmp"
-        )
-    else:
-        embedded_utterances = retrieve_file(
-            file="embedded_utterances.json", 
-            dir_name="tmp"
-        )
-    similar_utterances = add_similarity_to_next_item(embedded_utterances)
-    filtered_utterances = [
-        {k: v for k, v in utterance.items() if k != 'embedding'}
-        for utterance in similar_utterances
-    ]
-
-    def consolidate_similar_utterances(
-        utterances: list[dict],
-        similarity_threshold: float = 0.45
-    ) -> list[dict]:
-        """
-            Consolidates similar utterances based on their similarity to the next item.
-
-            Args:
-                utterances (list[dict]): List of utterances, each containing 'text', 'speakers', 
-                                        'similarity_to_next_item', and other fields.
-                similarity_threshold (float): Threshold for considering utterances similar.
-
-            Returns:
-                list[dict]: Consolidated list of utterances.
-
-            Example:
-                Input:
-                [
-                    {
-                        "start": 0, 
-                        "end": 200, 
-                        "speakers": ["Ben", "John"], 
-                        "text": "{1}: Hello, John!\n\n{2}: How are you?",
-                        "similarity_to_next_item": 0.9
-                    },
-                    {
-                        "start": 200, 
-                        "end": 400, 
-                        "speakers": ["Ben"], 
-                        "text": "I'm well",
-                        "similarity_to_next_item": 0.2
-                    },
-                ]  
-                Output:
-                [
-                    {
-                        "start": 0, 
-                        "end": 400, 
-                        "speakers": ["Ben", "John", "Ben"], 
-                        "text": "{}: Hello, John!\n\n{2}: How are you?\n\n{3}: I'm well",
-                        "similarity_to_next_item": 0.2
-                    },
-                ]
-        """
-        consolidated = []
-        combine_text = []
-        current_start = None
-        current_speakers = []
-
-        for utterance in utterances:
-            utterance_text = utterance['text'].strip()
-            if not utterance_text:
-                continue
-
-            if current_start is None:
-                current_start = utterance['start']
-
-            utterance_speakers = utterance['speakers']
-            if len(utterance_speakers) == 1:
-                formatted_text = f"{{}}: {utterance_text}"
-            else:
-                formatted_text = f"{utterance_text}"
-            
-            if utterance['similarity_to_next_item'] < similarity_threshold:
-                combine_text.append(formatted_text)
-                current_speakers.extend(utterance_speakers)
-            else:
-                if combine_text:
-                    current_speakers.extend(utterance_speakers)
-                    combine_text.append(formatted_text)
-                    consolidated.append({
-                        "start": current_start,
-                        "end": utterance['end'],
-                        "speakers": list(current_speakers),
-                        "text": '\n\n'.join(combine_text),
-                    })
-                else:
-                    consolidated.append({
-                        "start": utterance['start'],
-                        "end": utterance['end'],
-                        "speakers": utterance['speakers'],
-                        "text": utterance_text,
-                    })
-                combine_text = []
-                current_speakers = []
-                current_start = None
-
-        if combine_text:
-            consolidated.append({
-                "start": current_start,
-                "end": utterance['end'],
-                "speakers": list(current_speakers),
-                "text": '\n\n'.join(combine_text),
-            })
-
-        return consolidated
+    print(json.dumps(consolidated_utterances[0], indent=4))
+    # if True:
+    #     embedded_utterances = embed_dict_list(
+    #         embedding_function=create_openai_embedding,
+    #         chunk_dicts=speakermod_utterances, 
+    #         key_to_embed="text",
+    #         model_choice="text-embedding-3-large"
+    #     )
+    #     similar_utterances = add_similarity_to_next_item(embedded_utterances)
+    #     filtered_utterances = [
+    #         {k: v for k, v in utterance.items() if k != 'embedding'}
+    #         for utterance in similar_utterances
+    #     ]
+    #     write_to_file(
+    #         content=filtered_utterances,
+    #         file="filtered_utterances.json",
+    #         output_dir_name="tmp"
+    #     )
+    # else:
+    #     filtered_utterances = retrieve_file(
+    #         file="filtered_utterances.json", 
+    #         dir_name="tmp"
+    #     )
     
-    consolidated_similar_utterances = consolidate_similar_utterances(filtered_utterances)
 
-    for utterance in consolidated_similar_utterances:
-        speakers = utterance['speakers']
-        text = utterance['text']
-        print(f"-----\n{text}\n--------")
-        print(text.format(*speakers))
 
-    # consolidated_similar_utterances = consolidate_similar_utterances(similar_utterances)
+    # consolidated_similar_utterances = consolidate_similar_utterances(filtered_utterances)
+
+    # print(f"Length of transcribed utterances: {len(transcribed_utterances)}")
+    # print(f"Length of consolidated utterances: {len(consolidated_utterances)}")
+    # print(f"Length of filtered utterances: {len(filtered_utterances)}")
+    # print(f"Length of consolidated similar utterances: {len(consolidated_similar_utterances)}")
+
+    
+    # if True:
+    #     consolidated_embeddings = embed_dict_list(
+    #         embedding_function=create_openai_embedding,
+    #         chunk_dicts=consolidated_similar_utterances, 
+    #         key_to_embed="text",
+    #         model_choice="text-embedding-3-large"
+    #     )
+    #     write_to_file(
+    #         content=consolidated_embeddings,
+    #         file="consolidated_embeddings.json",
+    #         output_dir_name="tmp"
+    #     )
+    # else:
+    #     consolidated_embeddings = retrieve_file(
+    #         file="consolidated_embeddings.json", 
+    #         dir_name="tmp"
+    #     )
+    # print(consolidated_embeddings[0])
+    
+
  
     # print(json.dumps(filtered_utterances, indent=4))
  
