@@ -3,7 +3,7 @@ from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embe
 from genai_toolbox.download_sources.podcast_functions import return_entries_by_date, download_podcast_audio, generate_episode_summary
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file, evaluate_and_clean_valid_response
 from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_utterances, replace_speakers_in_assemblyai_utterances
-from genai_toolbox.text_prompting.model_calls import openai_text_response, anthropic_text_response
+from genai_toolbox.text_prompting.model_calls import openai_text_response, anthropic_text_response, groq_text_response
 
 import json
 import os
@@ -82,18 +82,10 @@ def add_metadata_to_chunks(
     additional_metadata: dict = {}
 ) -> list[dict]:
 
-    if not source:
-        raise ValueError("Source must be provided")
-
-    if not all('embedding' in chunk and 'text' in chunk for chunk in chunks):
-        raise ValueError("Each chunk must contain both 'embedding' and 'text' keys")
-
     return [
         {    
-            "text": chunk["text"],
-            "embedding": chunk["embedding"],
-            **additional_metadata,
-            **{k: v for k, v in chunk.items() if k not in ["text", "embedding"]}
+            **{k: v for k, v in chunk.items()},
+            **additional_metadata
         } for chunk in chunks
     ]
 
@@ -171,7 +163,6 @@ def consolidate_short_assemblyai_utterances(
     finalize_group()  # Handle the last group if exists
 
     return consolidated
-
 
 # Combine similar chunks
 
@@ -295,18 +286,39 @@ def consolidate_similar_utterances(
     finalize_group()  # Handle the last group if exists
 
     return consolidated
+
+def format_speakers_in_utterances(
+    utterances: list[dict]
+) -> list[dict]:
+    formatted_utterances = []
+    for utterance in utterances:
+        speakers = utterance['speakers']
+        text = utterance['text']
+        
+        if '{}' in text:
+            # Format the text if placeholders are present
+            formatted_text = text.format(*speakers)
+        else:
+            # Keep the text as is if no placeholders
+            formatted_text = text
+        
+        formatted_utterances.append({
+            **{k: v for k, v in utterance.items() if k != 'text'},
+            "text": formatted_text
+        })
     
+    return formatted_utterances
 
 # Query embeddings
-def query_chunks_with_metadata(
+def query_chunks_with_embeddings(
     query: str,
     chunks_with_embeddings: list[dict], 
-    client: Callable,
+    embedding_function: Callable = create_openai_embedding,
     model_choice: str = "text-embedding-3-large",
     threshold: float = 0.4,
     max_returned_chunks: int = 10,
 ) -> list[dict]:
-    query_embedding = create_embedding(query, client, model_choice)
+    query_embedding = embedding_function(text=query, model_choice=model_choice)
 
     similar_chunks = []
     for chunk in chunks_with_embeddings:
@@ -324,17 +336,17 @@ def query_chunks_with_metadata(
 def llm_response_with_query(
     question: str,
     chunks_with_embeddings: list[dict],
-    query_client: Callable = openai_client(),
+    embedding_function: Callable = create_openai_embedding,
     query_model: str = "text-embedding-3-large",
     threshold: float = 0.4,
     max_query_chunks: int = 3,
     llm_function: Callable = openai_text_response,
     llm_model: str = "4o",
 ):
-    query_response = query_chunks_with_metadata(
+    query_response = query_chunks_with_embeddings(
         query=question, 
         chunks_with_embeddings=chunks_with_embeddings,
-        client=query_client, 
+        embedding_function=embedding_function, 
         model_choice=query_model, 
         threshold=threshold,
         max_returned_chunks=max_query_chunks
@@ -343,34 +355,44 @@ def llm_response_with_query(
     if len(query_response) == 0:
         return "Sources are not relevant enough to answer this question"
 
+    # Check that query_response chunks contain 'title' and 'text'
+    for chunk in query_response:
+        if 'title' not in chunk or 'text' not in chunk:
+            raise ValueError("Each chunk in query_response must contain 'title' and 'text' keys")
+
     sources = ""
     for chunk in query_response:
         sources += f"""
-        Source: '{chunk['source']}',
+        Source: '{chunk['title']}',
         Text: '{chunk['text']}'
         """
 
     prompt = f"Question: {question}\n\nSources: {sources}"
 
     llm_system_prompt = f"""
-    You are an expert at incorporating information from sources to provide answers. 
-    Cite from the sources that are given to you in your answers.
+    Use numbered references (e.g. [1]) to cite the sources that are given to you in your answers.
+    List the references used at the bottom of your answer.
+    Do not refer to the source material in your text, only in your number citations
+    Give a detailed answer.
     """
-    response = llm_function(
+    llm_response = llm_function(
         prompt, 
         system_instructions=llm_system_prompt, 
         model_choice=llm_model,
     )
 
-    return response
+    return {
+        "llm_response": llm_response,
+        "query_response": query_response
+    }
 
 async def download_and_transcribe_multiple_episodes_by_date(
     feed_url: str,
     start_date: str,
     end_date: str,
-    download_dir_name: Optional[str] = None,
-    transcript_dir_name: Optional[str] = None,
-    new_transcript_dir_name: Optional[str] = None,
+    audio_dir_name: Optional[str] = None,
+    utterances_dir_name: Optional[str] = None,
+    utterances_replaced_dir_name: Optional[str] = None,
     max_concurrent_tasks: int = 5,
     max_retries: int = 3,
     retry_delay: float = 1.0
@@ -387,7 +409,7 @@ async def download_and_transcribe_multiple_episodes_by_date(
                     download_podcast_audio, 
                     entry['url'], 
                     entry['title'], 
-                    download_dir_name=download_dir_name
+                    download_dir_name=audio_dir_name
                 )
                 pbar.set_postfix({"stage": "audio downloaded"})
                 
@@ -401,17 +423,18 @@ async def download_and_transcribe_multiple_episodes_by_date(
                 entry['utterances_dict'] = await asyncio.to_thread(
                     generate_assemblyai_utterances,
                     entry['audio_file_path'], 
-                    output_dir_name=transcript_dir_name
+                    output_dir_name=utterances_dir_name
                 )
-                pbar.set_postfix({"stage": "raw transcript generated"})
+                pbar.set_postfix({"stage": "utterances generated"})
+                print(json.dumps(entry['utterances_dict'], indent=4))
                 
-                entry['transcript'] = await asyncio.to_thread(
+                entry['replaced_dict'] = await asyncio.to_thread(
                     replace_speakers_in_assemblyai_utterances, 
                     entry['utterances_dict'], 
                     entry['audio_summary'],
-                    output_dir_name=new_transcript_dir_name
+                    output_dir_name=utterances_replaced_dir_name
                 )
-                pbar.set_postfix({"stage": "transcript processed"})
+                pbar.set_postfix({"stage": "utterances replaced"})
                 
                 pbar.update(1)
                 return entry
@@ -439,18 +462,14 @@ async def main():
     feed_url = "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ"
     start_date_input = "June 1, 2024"
     end_date_input = "June 5, 2024"
-    download_dir_name = "tmp_audio"
-    transcript_dir_name = "tmp_transcripts"
-    new_transcript_dir_name = "tmp_new_transcripts"
+    audio_dir_name = "tmp_audio"
 
     if True:
         updated_entries = await download_and_transcribe_multiple_episodes_by_date(
             feed_url=feed_url,
             start_date=start_date_input,
             end_date=end_date_input,
-            download_dir_name=download_dir_name,
-            transcript_dir_name=transcript_dir_name,
-            new_transcript_dir_name=new_transcript_dir_name
+            audio_dir_name=audio_dir_name,
         )
         write_to_file(
             content=updated_entries,
@@ -462,18 +481,15 @@ async def main():
         updated_entries = json.loads(updated_entries)
 
 if __name__ == "__main__":
-    # asyncio.run(main())
+    asyncio.run(main())
 
-    utterances_dict = retrieve_file(
-        file="Computex_2024_replaced.json", 
-        dir_name="tmp_new_transcripts"
-    )
-    transcribed_utterances = utterances_dict['transcribed_utterances']
-    speakermod_utterances = convert_speaker_to_speakers(transcribed_utterances)
-    print(json.dumps(speakermod_utterances[0], indent=4))
-    consolidated_utterances = consolidate_short_assemblyai_utterances(transcribed_utterances, min_length=100)
-    print(json.dumps(consolidated_utterances[0], indent=4))
-    # if True:
+    # utterances_dict = retrieve_file(
+    #     file="Computex_2024_replaced.json", 
+    #     dir_name="tmp_new_transcripts"
+    # )
+    # transcribed_utterances = utterances_dict['transcribed_utterances']
+    # speakermod_utterances = convert_speaker_to_speakers(transcribed_utterances)
+    # if False:
     #     embedded_utterances = embed_dict_list(
     #         embedding_function=create_openai_embedding,
     #         chunk_dicts=speakermod_utterances, 
@@ -496,17 +512,9 @@ if __name__ == "__main__":
     #         dir_name="tmp"
     #     )
     
-
-
-    # consolidated_similar_utterances = consolidate_similar_utterances(filtered_utterances)
-
-    # print(f"Length of transcribed utterances: {len(transcribed_utterances)}")
-    # print(f"Length of consolidated utterances: {len(consolidated_utterances)}")
-    # print(f"Length of filtered utterances: {len(filtered_utterances)}")
-    # print(f"Length of consolidated similar utterances: {len(consolidated_similar_utterances)}")
-
-    
-    # if True:
+    # consolidated_similar_utterances = consolidate_similar_utterances(filtered_utterances, similarity_threshold=0.35)
+   
+    # if False:
     #     consolidated_embeddings = embed_dict_list(
     #         embedding_function=create_openai_embedding,
     #         chunk_dicts=consolidated_similar_utterances, 
@@ -523,9 +531,24 @@ if __name__ == "__main__":
     #         file="consolidated_embeddings.json", 
     #         dir_name="tmp"
     #     )
-    # print(consolidated_embeddings[0])
-    
 
- 
-    # print(json.dumps(filtered_utterances, indent=4))
- 
+    # title = utterances_dict['extracted_title']
+    # additional_metadata = {
+    #     "title": title,
+    # }
+    # titled_embeddings = add_metadata_to_chunks(
+    #     chunks=consolidated_embeddings,
+    #     additional_metadata=additional_metadata
+    # )
+    # titled_embeddings = format_speakers_in_utterances(titled_embeddings)
+    # response = llm_response_with_query(
+    #     question="Is NVIDIA Cisco?",
+    #     chunks_with_embeddings=titled_embeddings,
+    #     embedding_function=create_openai_embedding,
+    #     query_model="text-embedding-3-large",
+    #     threshold=0.35,
+    #     max_query_chunks=3,
+    #     llm_function=openai_text_response,
+    #     llm_model="4"
+    # )
+     
