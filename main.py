@@ -8,6 +8,7 @@ from genai_toolbox.text_prompting.model_calls import openai_text_response, anthr
 import json
 import os
 import logging
+import re
 
 import asyncio
 from asyncio import Semaphore
@@ -121,11 +122,7 @@ def consolidate_similar_split_chunks(
     
     return similar_chunks
 
-#
-
-
-def create_chunks_with_metadata(
-    source: str,
+def add_metadata_to_chunks(
     chunks: list[dict],
     additional_metadata: dict = {}
 ) -> list[dict]:
@@ -137,8 +134,7 @@ def create_chunks_with_metadata(
         raise ValueError("Each chunk must contain both 'embedding' and 'text' keys")
 
     return [
-        {
-            "source": source,
+        {    
             "text": chunk["text"],
             "embedding": chunk["embedding"],
             **additional_metadata,
@@ -146,6 +142,7 @@ def create_chunks_with_metadata(
         } for chunk in chunks
     ]
 
+# Query embeddings
 def query_chunks_with_metadata(
     query: str,
     chunks_with_embeddings: list[dict], 
@@ -283,7 +280,6 @@ async def download_and_transcribe_multiple_episodes_by_date(
     logging.info(f"Successfully processed {len(successful_entries)} out of {len(feed_entries)} episodes")
     return successful_entries
 
-
 async def main():
     feed_url = "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ"
     start_date_input = "June 1, 2024"
@@ -319,40 +315,72 @@ if __name__ == "__main__":
     )
     transcribed_utterances = utterances_dict['transcribed_utterances']
 
-    """
-    Example utterance:
-        {
-            "confidence": 0.9069812500000001,
-            "end": 8374,
-            "speaker": "John Gruber",
-            "start": 2000,
-            "text": "Ben, it's conference time of the year, and for once the world is traveling to you."
-        },
-    """
     def consolidate_short_assemblyai_utterances(
-        transcribed_utterances: list[dict],
+        utterances: list[dict],
         min_length: int = 75
     ) -> list[dict]:
+        """
+            Consolidates short utterances from AssemblyAI transcription into longer segments.
+
+            This function takes a list of transcribed utterances and combines short utterances
+            (less than a specified minimum length) into longer segments. It preserves speaker
+            information and formats the text to include speaker indicators.
+
+            Args:
+                transcribed_utterances (list[dict]): A list of dictionaries, each representing
+                    an utterance with keys 'confidence', 'end', 'speaker', 'start', and 'text'.
+                min_length (int, optional): The minimum length of text to be considered a
+                    standalone utterance. Defaults to 75 characters.
+
+            Returns:
+                list[dict]: A list of consolidated utterances, where each dictionary contains
+                    'start', 'end', 'speakers', and 'text' keys. The 'text' may include multiple
+                    utterances from different speakers, formatted with speaker indicators. 
+                    The function uses {} to indicate different speakers within a consolidated utterance.
+
+            Example:
+                Input:
+                [
+                    {
+                        "start": 0, 
+                        "end": 100, 
+                        "speaker": "Ben", 
+                        "text": "Hello, John!"
+                    },
+                    {
+                        "start": 100, 
+                        "end": 200, 
+                        "speaker": "John", 
+                        "text": "How are you?"
+                    },
+                ]
+                Output:
+                [
+                    {
+                        "start": 0, 
+                        "end": 200, 
+                        "speakers": ["Ben", "John"], 
+                        "text": "{}: Hello, John!\n\n{}: How are you?"
+                    },
+                ]            
+        """
         lengthened_utterances = []
         combine_text = []
         current_start = None
         current_speakers = []
 
-        for utterance in transcribed_utterances:
-            
-            current_text = utterance['text'].strip()
-            if not current_text:
+        for utterance in utterances:
+            utterance_text = utterance['text'].strip()
+            if not utterance_text:
                 continue
 
             if current_start is None:
                 current_start = utterance['start']
 
             current_speakers.append(utterance['speaker'])
-            first_name_initial_in_speakers = utterance['speaker'].split(' ')[0][0]
-            last_name_initial_in_speakers = utterance['speaker'].split(' ')[1][0]
-            formatted_text = f"{{{len(current_speakers)}}}: {current_text}"
+            formatted_text = f"{{}}: {utterance_text}"
 
-            if len(current_text) < min_length:
+            if len(utterance_text) < min_length:
                 combine_text.append(formatted_text)
             else:
                 if combine_text:
@@ -363,21 +391,21 @@ if __name__ == "__main__":
                         "speakers": list(current_speakers),
                         "text": '\n\n'.join(combine_text),
                     })
-                    combine_text = []
                 else:
                     lengthened_utterances.append({
                         "start": current_start,
                         "end": utterance['end'],
                         "speakers": list(current_speakers),
-                        "text": current_text,
+                        "text": utterance_text,
                     })
+                combine_text = []
                 current_speakers = []
                 current_start = None
 
         if combine_text:
             lengthened_utterances.append({
                 "start": current_start,
-                "end": transcribed_utterances[-1]['end'],
+                "end": utterances[-1]['end'],
                 "speakers": list(current_speakers),
                 "text": '\n\n'.join(combine_text)
             })
@@ -398,6 +426,18 @@ if __name__ == "__main__":
 
             Returns:
                 list[dict]: The input list with added 'similarity_to_next_item' key for each dict.
+
+            Example:
+                Input:
+                [
+                    {..., "embedding": [0.1, 0.2, 0.3]},
+                    {..., "embedding": [0.4, 0.5, 0.6]},
+                ]
+                Output:
+                [
+                    {..., "embedding": [0.1, 0.2, 0.3], "similarity_to_next_item": 0.9},
+                    {..., "embedding": [0.4, 0.5, 0.6], "similarity_to_next_item": 0.9},
+                ]
         """
         for i in range(len(chunk_dicts) - 1):
             current_embedding = chunk_dicts[i]['embedding']
@@ -410,7 +450,6 @@ if __name__ == "__main__":
 
         return chunk_dicts
 
-                    
     consolidated_utterances = consolidate_short_assemblyai_utterances(transcribed_utterances, min_length=100)
     print(f"Length of transcribed utterances: {len(transcribed_utterances)}")
     print(f"Length of consolidated utterances: {len(consolidated_utterances)}")
@@ -422,9 +461,9 @@ if __name__ == "__main__":
             key_to_embed="text",
             model_choice="text-embedding-3-large"
         )
-        similar_utterances = add_similarity_to_next_item(embedded_utterances)
+        
         write_to_file(
-            content=similar_utterances,
+            content=embedded_utterances,
             file="embedded_utterances.json",
             output_dir_name="tmp"
         )
@@ -433,6 +472,118 @@ if __name__ == "__main__":
             file="embedded_utterances.json", 
             dir_name="tmp"
         )
-    for utterance in embedded_utterances:
-        print(utterance['similarity_to_next_item'])
+    similar_utterances = add_similarity_to_next_item(embedded_utterances)
+    filtered_utterances = [
+        {k: v for k, v in utterance.items() if k != 'embedding'}
+        for utterance in similar_utterances
+    ]
+
+    def consolidate_similar_utterances(
+        utterances: list[dict],
+        similarity_threshold: float = 0.45
+    ) -> list[dict]:
+        """
+            Consolidates similar utterances based on their similarity to the next item.
+
+            Args:
+                utterances (list[dict]): List of utterances, each containing 'text', 'speakers', 
+                                        'similarity_to_next_item', and other fields.
+                similarity_threshold (float): Threshold for considering utterances similar.
+
+            Returns:
+                list[dict]: Consolidated list of utterances.
+
+            Example:
+                Input:
+                [
+                    {
+                        "start": 0, 
+                        "end": 200, 
+                        "speakers": ["Ben", "John"], 
+                        "text": "{1}: Hello, John!\n\n{2}: How are you?",
+                        "similarity_to_next_item": 0.9
+                    },
+                    {
+                        "start": 200, 
+                        "end": 400, 
+                        "speakers": ["Ben"], 
+                        "text": "I'm well",
+                        "similarity_to_next_item": 0.2
+                    },
+                ]  
+                Output:
+                [
+                    {
+                        "start": 0, 
+                        "end": 400, 
+                        "speakers": ["Ben", "John", "Ben"], 
+                        "text": "{}: Hello, John!\n\n{2}: How are you?\n\n{3}: I'm well",
+                        "similarity_to_next_item": 0.2
+                    },
+                ]
+        """
+        consolidated = []
+        combine_text = []
+        current_start = None
+        current_speakers = []
+
+        for utterance in utterances:
+            utterance_text = utterance['text'].strip()
+            if not utterance_text:
+                continue
+
+            if current_start is None:
+                current_start = utterance['start']
+
+            utterance_speakers = utterance['speakers']
+            if len(utterance_speakers) == 1:
+                formatted_text = f"{{}}: {utterance_text}"
+            else:
+                formatted_text = f"{utterance_text}"
+            
+            if utterance['similarity_to_next_item'] < similarity_threshold:
+                combine_text.append(formatted_text)
+                current_speakers.extend(utterance_speakers)
+            else:
+                if combine_text:
+                    current_speakers.extend(utterance_speakers)
+                    combine_text.append(formatted_text)
+                    consolidated.append({
+                        "start": current_start,
+                        "end": utterance['end'],
+                        "speakers": list(current_speakers),
+                        "text": '\n\n'.join(combine_text),
+                    })
+                else:
+                    consolidated.append({
+                        "start": utterance['start'],
+                        "end": utterance['end'],
+                        "speakers": utterance['speakers'],
+                        "text": utterance_text,
+                    })
+                combine_text = []
+                current_speakers = []
+                current_start = None
+
+        if combine_text:
+            consolidated.append({
+                "start": current_start,
+                "end": utterance['end'],
+                "speakers": list(current_speakers),
+                "text": '\n\n'.join(combine_text),
+            })
+
+        return consolidated
+    
+    consolidated_similar_utterances = consolidate_similar_utterances(filtered_utterances)
+
+    for utterance in consolidated_similar_utterances:
+        speakers = utterance['speakers']
+        text = utterance['text']
+        print(f"-----\n{text}\n--------")
+        print(text.format(*speakers))
+
+    # consolidated_similar_utterances = consolidate_similar_utterances(similar_utterances)
+ 
+    # print(json.dumps(filtered_utterances, indent=4))
  
