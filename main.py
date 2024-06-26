@@ -1,10 +1,11 @@
 from genai_toolbox.download_sources.podcast_functions import return_entries_by_date, download_podcast_audio, generate_episode_summary
 from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_utterances, replace_speakers_in_assemblyai_utterances
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding, embed_dict_list, add_similarity_to_next_dict_item
-from genai_toolbox.chunk_and_embed.chunking_functions import convert_utterance_speaker_to_speakers, consolidate_similar_utterances, add_metadata_to_chunks, format_speakers_in_utterances
+from genai_toolbox.chunk_and_embed.chunking_functions import convert_utterance_speaker_to_speakers, consolidate_similar_utterances, add_metadata_to_chunks, format_speakers_in_utterances, milliseconds_to_minutes_in_utterances
 from genai_toolbox.chunk_and_embed.llms_with_queries import llm_response_with_query
 from genai_toolbox.text_prompting.model_calls import anthropic_text_response, groq_text_response, openai_text_response
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
+from genai_toolbox.helper_functions.datetime_helpers import convert_date_format
 
 import json
 import os
@@ -88,11 +89,11 @@ async def download_and_transcribe_multiple_episodes_by_date(
 
 async def main():
     feed_url = "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ"
-    start_date_input = "June 17, 2024"
-    end_date_input = "June 19, 2024"
+    start_date_input = "June 1, 2024"
+    end_date_input = "June 27, 2024"
     audio_dir_name = "tmp_audio"
 
-    if False:
+    if True:
         updated_entries = await download_and_transcribe_multiple_episodes_by_date(
             feed_url=feed_url,
             start_date=start_date_input,
@@ -116,10 +117,11 @@ if __name__ == "__main__":
     )
 
     aggregated_chunked_embeddings = []
-    if False:
+    if True:
         for entry in feed_dict:
             feed_title = entry['feed_title']
             episode_title = entry['title']
+            episode_date=convert_date_format(entry['published'])
             utterances = entry['replaced_dict']['transcribed_utterances']
             speakermod_utterances = convert_utterance_speaker_to_speakers(utterances)
             embedded_utterances = embed_dict_list(
@@ -141,14 +143,15 @@ if __name__ == "__main__":
                 model_choice="text-embedding-3-large"
             )
             additional_metadata = {
-                "title": f"{feed_title} - {episode_title}"
+                "title": f" {feed_title} - {episode_date}: {episode_title}"
             }
             titled_embeddings = add_metadata_to_chunks(
                 chunks=consolidated_embeddings,
                 additional_metadata=additional_metadata
             )
             formatted_embeddings = format_speakers_in_utterances(titled_embeddings)
-            aggregated_chunked_embeddings.extend(formatted_embeddings)
+            milliseconds_embeddings = milliseconds_to_minutes_in_utterances(formatted_embeddings)
+            aggregated_chunked_embeddings.extend(milliseconds_embeddings)
 
         write_to_file(
             content=aggregated_chunked_embeddings,
@@ -160,18 +163,34 @@ if __name__ == "__main__":
             file="aggregated_chunked_embeddings.json", 
             dir_name="tmp"
         )
+question = "What is Apple up to?"
+llm_system_prompt = f"""
+Use numbered references to cite the sources that are given to you. 
+Each timestamp is its own reference (e.g. [1] Title at 01:00). 
+Do not refer to the source material in your text, only in your number citations
+Give a detailed answer.
+"""
+source_template="Title: {title} at {start_time}\nText: {text}"
+template_args={
+    "title": "title",
+    "text": "text",
+    "start_time": "start_time",
+}
 
 response = llm_response_with_query(
-    question="How does Apple fit in the AI ecosystem?",
+    question=question,
     chunks_with_embeddings=aggregated_chunked_embeddings,
     embedding_function=create_openai_embedding,
     query_model="text-embedding-3-large",
     threshold=0.35,
     max_query_chunks=5,
-    llm_function=anthropic_text_response,
-    llm_model="haiku"
+    llm_function=openai_text_response,
+    llm_model_choice="4o",
+    source_template=source_template,
+    template_args=template_args,
 )
 
 # print(response)
-print(json.dumps(response['query_response'], indent=4))
-print(response['llm_response'])
+# print(json.dumps(response['query_response'], indent=4))
+print(f"\n\nQuestion: {question}\n\n")
+print(f"Response: {response['llm_response']}\n\n")
