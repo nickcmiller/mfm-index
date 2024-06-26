@@ -1,390 +1,19 @@
-from genai_toolbox.clients.openai_client import openai_client
-from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding, cosine_similarity, embed_dict_list
 from genai_toolbox.download_sources.podcast_functions import return_entries_by_date, download_podcast_audio, generate_episode_summary
-from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file, evaluate_and_clean_valid_response
 from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_utterances, replace_speakers_in_assemblyai_utterances
-from genai_toolbox.text_prompting.model_calls import openai_text_response, anthropic_text_response, groq_text_response
+from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding, embed_dict_list, add_similarity_to_next_dict_item
+from genai_toolbox.chunk_and_embed.chunking_functions import convert_utterance_speaker_to_speakers, consolidate_similar_utterances, add_metadata_to_chunks, format_speakers_in_utterances
+from genai_toolbox.chunk_and_embed.llms_with_queries import llm_response_with_query
+from genai_toolbox.text_prompting.model_calls import anthropic_text_response, groq_text_response, openai_text_response
+from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
 
 import json
 import os
 import logging
-import re
+from typing import List, Dict, Optional
 
 import asyncio
 from asyncio import Semaphore
-from concurrent.futures import ThreadPoolExecutor
-
 from tqdm.asyncio import tqdm
-import numpy as np
-from typing import Callable, List, Dict, Optional, AsyncIterator
-import time
-
-client = openai_client()
-# Splitting Transcript into Chunks
-def split_text_string(
-    text: str, 
-    separator: str
-) -> list[dict]:
-    """
-        Splits the text by the given separator and returns a list of dictionaries where each dictionary has a key 'text' with non-empty chunks as values.
-
-        Args:
-        text (str): The text to split.
-        separator (str): The separator to use for splitting the text.
-
-        Returns:
-        list[dict]: A list of dictionaries with the key 'text' and values as non-empty text chunks.
-    """
-    chunks = text.split(separator)
-    return [{"text": chunk} for chunk in chunks if chunk]
-
-def consolidate_split_chunks(
-    chunk_dicts: list[dict], 
-    min_length: int = 75
-) -> list[dict]:
-    """
-        Combines consecutive chunks of text that are shorter than `max_length`.
-        Chunks longer than `max_length` are added as separate entries in the result list.
-
-        Args:
-        chunk_dicts (list of dict): The list of dictionaries containing text chunks to process.
-        max_length (int): The maximum length for a chunk to be considered short.
-
-        Returns:
-        list of dict: A new list of dictionaries where short consecutive chunks have been combined.
-    """
-    lengthened_chunk_dicts = []
-    combine_chunks = []
-
-    for chunk_dict in chunk_dicts:
-        chunk = chunk_dict['text']
-        if len(chunk) == 0:
-            continue
-
-        if len(chunk) < min_length:
-            combine_chunks.append(chunk)
-        else:
-            if combine_chunks:
-                combine_chunks.append(chunk)
-                lengthened_chunk_dicts.append({"text": '\n\n'.join(combine_chunks)})
-                combine_chunks = []
-            else:
-                lengthened_chunk_dicts.append({"text": chunk})
-
-    if combine_chunks:
-        lengthened_chunk_dicts.append({"text": '\n\n'.join(combine_chunks)})
-
-    return lengthened_chunk_dicts
-        
-
-def add_metadata_to_chunks(
-    chunks: list[dict],
-    additional_metadata: dict = {}
-) -> list[dict]:
-
-    return [
-        {    
-            **{k: v for k, v in chunk.items()},
-            **additional_metadata
-        } for chunk in chunks
-    ]
-
-# Chunking utterances
-
-def convert_speaker_to_speakers(
-    utterances: list[dict]
-) -> list[dict]:
-
-    mod_utterances = []
-    for utterance in utterances:
-        speakers = [utterance['speaker']]
-        mod_utterances.append({
-            **{k: v for k, v in utterance.items() if k != 'speaker'},
-            "speakers": speakers
-        })
-        
-    return mod_utterances
-
-
-def consolidate_short_assemblyai_utterances(
-    utterances: list[dict],
-    min_length: int = 75
-) -> list[dict]:
-    """
-        Consolidates short utterances from AssemblyAI transcription into longer segments.
-
-            Args:
-                utterances (list[dict]): A list of dictionaries, each representing an utterance
-                    with keys 'confidence', 'end', 'speaker', 'start', and 'text'.
-            min_length (int, optional): The minimum length of text to be considered a
-                standalone utterance. Defaults to 75 characters.
-
-        Returns:
-            list[dict]: A list of consolidated utterances.
-    """
-    consolidated = []
-    current_group = None
-
-    def finalize_group():
-        if current_group:
-            if len(set(current_group["speakers"])) > 1:
-                text = "\n\n".join(f"{{}}: {t}" for t in current_group["texts"])
-            else:
-                text = current_group["texts"][0]
-            
-            consolidated.append({
-                "start": current_group["start"],
-                "end": current_group["end"],
-                "speakers": current_group["speakers"],
-                "text": text,
-            })
-
-    for utterance in utterances:
-        utterance_text = utterance['text'].strip()
-        if not utterance_text:
-            continue
-
-        if current_group is None:
-            current_group = {
-                "start": utterance['start'],
-                "end": utterance['end'],
-                "speakers": [utterance['speaker']],
-                "texts": [utterance_text],
-            }
-        else:
-            current_group["end"] = utterance['end']
-            current_group["speakers"].append(utterance['speaker'])
-            current_group["texts"].append(utterance_text)
-
-        if len(utterance_text) >= min_length:
-            finalize_group()
-            current_group = None
-
-    finalize_group()  # Handle the last group if exists
-
-    return consolidated
-
-# Combine similar chunks
-
-def add_similarity_to_next_item(
-    chunk_dicts: list[dict],
-    similarity_metric: Callable = cosine_similarity
-) -> list[dict]:
-    """
-        Adds a 'similarity_to_next_item' key to each dictionary in the list,
-        calculating the cosine similarity between the current item's embedding
-        and the next item's embedding. The last item's similarity is always 0.
-
-        Args:
-            chunk_dicts (list[dict]): List of dictionaries containing 'embedding' key.
-
-        Returns:
-            list[dict]: The input list with added 'similarity_to_next_item' key for each dict.
-
-        Example:
-            Input:
-            [
-                {..., "embedding": [0.1, 0.2, 0.3]},
-                {..., "embedding": [0.4, 0.5, 0.6]},
-            ]
-            Output:
-            [
-                {..., "embedding": [0.1, 0.2, 0.3], "similarity_to_next_item": 0.9},
-                {..., "embedding": [0.4, 0.5, 0.6], "similarity_to_next_item": 0.9},
-            ]
-    """
-    for i in range(len(chunk_dicts) - 1):
-        current_embedding = chunk_dicts[i]['embedding']
-        next_embedding = chunk_dicts[i + 1]['embedding']
-        similarity = cosine_similarity(current_embedding, next_embedding)
-        chunk_dicts[i]['similarity_to_next_item'] = similarity
-
-    # similarity_to_next_item for the last item is always 0
-    chunk_dicts[-1]['similarity_to_next_item'] = 0
-
-    return chunk_dicts
-
-def consolidate_similar_split_chunks(
-    chunks: list[dict], 
-    threshold: float = 0.45
-) -> list[dict]:
-    """
-    Consolidates similar chunks based on their precomputed 'similarity_to_next_item'.
-
-    Args:
-        chunks (list[dict]): List of dictionaries, each containing 'text' and 'similarity_to_next_item' keys.
-        threshold (float): Similarity threshold for consolidation.
-
-    Returns:
-        list[dict]: Consolidated list of dictionaries, each with a 'text' key.
-    """
-    consolidated_chunks = []
-    current_chunk_texts = []
-
-    for i, chunk in enumerate(chunks):
-        current_chunk_texts.append(chunk['text'])
-
-        if chunk['similarity_to_next_item'] < threshold or i == len(chunks) - 1:
-            consolidated_chunks.append({"text": '\n\n'.join(current_chunk_texts)})
-            current_chunk_texts = []
-
-    return consolidated_chunks
-
-def consolidate_similar_utterances(
-    utterances: list[dict],
-    similarity_threshold: float = 0.45
-) -> list[dict]:
-    """
-        Consolidates similar utterances based on their similarity to the next item.
-
-        Args:
-            utterances (list[dict]): List of utterances, each containing 'text', 'speakers', 
-                                    'similarity_to_next_item', and other fields.
-            similarity_threshold (float): Threshold for considering utterances similar.
-
-        Returns:
-            list[dict]: Consolidated list of utterances.
-    """
-    consolidated = []
-    current_group = None
-
-    def finalize_group():
-        if current_group:
-            consolidated.append({
-                "start": current_group["start"],
-                "end": current_group["end"],
-                "speakers": current_group["speakers"],
-                "text": "\n\n".join(current_group["texts"]),
-            })
-
-    def format_text(text, speakers):
-        return f"{{}}: {text}" if len(speakers) == 1 else text
-
-    for utterance in utterances:
-        utterance_text = utterance['text'].strip()
-        if not utterance_text:
-            continue
-
-        formatted_text = format_text(utterance_text, utterance['speakers'])
-
-        if current_group is None:
-            current_group = {
-                "start": utterance['start'],
-                "end": utterance['end'],
-                "speakers": utterance['speakers'].copy(),
-                "texts": [formatted_text],
-            }
-        else:
-            current_group["end"] = utterance['end']
-            current_group["speakers"].extend(utterance['speakers'])
-            current_group["texts"].append(formatted_text)
-
-        if utterance['similarity_to_next_item'] < similarity_threshold:
-            finalize_group()
-            current_group = None
-
-    finalize_group()  # Handle the last group if exists
-
-    return consolidated
-
-def format_speakers_in_utterances(
-    utterances: list[dict]
-) -> list[dict]:
-    formatted_utterances = []
-    for utterance in utterances:
-        speakers = utterance['speakers']
-        text = utterance['text']
-        
-        if '{}' in text:
-            # Format the text if placeholders are present
-            formatted_text = text.format(*speakers)
-        else:
-            # Keep the text as is if no placeholders
-            formatted_text = text
-        
-        formatted_utterances.append({
-            **{k: v for k, v in utterance.items() if k != 'text'},
-            "text": formatted_text
-        })
-    
-    return formatted_utterances
-
-# Query embeddings
-def query_chunks_with_embeddings(
-    query: str,
-    chunks_with_embeddings: list[dict], 
-    embedding_function: Callable = create_openai_embedding,
-    model_choice: str = "text-embedding-3-large",
-    threshold: float = 0.4,
-    max_returned_chunks: int = 10,
-) -> list[dict]:
-    query_embedding = embedding_function(text=query, model_choice=model_choice)
-
-    similar_chunks = []
-    for chunk in chunks_with_embeddings:
-        similarity = cosine_similarity(query_embedding, chunk['embedding'])
-        if similarity > threshold:
-            chunk['similarity'] = similarity
-            similar_chunks.append(chunk)
-        
-    similar_chunks.sort(key=lambda x: x['similarity'], reverse=True)
-    top_chunks = similar_chunks[0:max_returned_chunks]
-    no_embedding_key_chunks = [{k: v for k, v in chunk.items() if k != 'embedding'} for chunk in top_chunks]
-    
-    return no_embedding_key_chunks
-
-def llm_response_with_query(
-    question: str,
-    chunks_with_embeddings: list[dict],
-    embedding_function: Callable = create_openai_embedding,
-    query_model: str = "text-embedding-3-large",
-    threshold: float = 0.4,
-    max_query_chunks: int = 3,
-    llm_function: Callable = openai_text_response,
-    llm_model: str = "4o",
-):
-    query_response = query_chunks_with_embeddings(
-        query=question, 
-        chunks_with_embeddings=chunks_with_embeddings,
-        embedding_function=embedding_function, 
-        model_choice=query_model, 
-        threshold=threshold,
-        max_returned_chunks=max_query_chunks
-    )
-
-    if len(query_response) == 0:
-        return "Sources are not relevant enough to answer this question"
-
-    # Check that query_response chunks contain 'title' and 'text'
-    for chunk in query_response:
-        if 'title' not in chunk or 'text' not in chunk:
-            raise ValueError("Each chunk in query_response must contain 'title' and 'text' keys")
-
-    sources = ""
-    for chunk in query_response:
-        sources += f"""
-        Source: '{chunk['title']}',
-        Text: '{chunk['text']}'
-        """
-
-    prompt = f"Question: {question}\n\nSources: {sources}"
-
-    llm_system_prompt = f"""
-    Use numbered references (e.g. [1]) to cite the sources that are given to you in your answers.
-    List the references used at the bottom of your answer.
-    Do not refer to the source material in your text, only in your number citations
-    Give a detailed answer.
-    """
-    llm_response = llm_function(
-        prompt, 
-        system_instructions=llm_system_prompt, 
-        model_choice=llm_model,
-    )
-
-    return {
-        "llm_response": llm_response,
-        "query_response": query_response
-    }
 
 async def download_and_transcribe_multiple_episodes_by_date(
     feed_url: str,
@@ -426,7 +55,6 @@ async def download_and_transcribe_multiple_episodes_by_date(
                     output_dir_name=utterances_dir_name
                 )
                 pbar.set_postfix({"stage": "utterances generated"})
-                print(json.dumps(entry['utterances_dict'], indent=4))
                 
                 entry['replaced_dict'] = await asyncio.to_thread(
                     replace_speakers_in_assemblyai_utterances, 
@@ -460,11 +88,11 @@ async def download_and_transcribe_multiple_episodes_by_date(
 
 async def main():
     feed_url = "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ"
-    start_date_input = "June 1, 2024"
-    end_date_input = "June 5, 2024"
+    start_date_input = "June 17, 2024"
+    end_date_input = "June 19, 2024"
     audio_dir_name = "tmp_audio"
 
-    if True:
+    if False:
         updated_entries = await download_and_transcribe_multiple_episodes_by_date(
             feed_url=feed_url,
             start_date=start_date_input,
@@ -473,82 +101,77 @@ async def main():
         )
         write_to_file(
             content=updated_entries,
-            file="podcast_feed.txt",
+            file="podcast_feed.json",
             output_dir_name="tmp"
         )
     else:
-        updated_entries = retrieve_file("podcast_feed.txt", dir_name="tmp")
-        updated_entries = json.loads(updated_entries)
+        updated_entries = retrieve_file("podcast_feed.json", dir_name="tmp")
 
 if __name__ == "__main__":
     asyncio.run(main())
 
-    # utterances_dict = retrieve_file(
-    #     file="Computex_2024_replaced.json", 
-    #     dir_name="tmp_new_transcripts"
-    # )
-    # transcribed_utterances = utterances_dict['transcribed_utterances']
-    # speakermod_utterances = convert_speaker_to_speakers(transcribed_utterances)
-    # if False:
-    #     embedded_utterances = embed_dict_list(
-    #         embedding_function=create_openai_embedding,
-    #         chunk_dicts=speakermod_utterances, 
-    #         key_to_embed="text",
-    #         model_choice="text-embedding-3-large"
-    #     )
-    #     similar_utterances = add_similarity_to_next_item(embedded_utterances)
-    #     filtered_utterances = [
-    #         {k: v for k, v in utterance.items() if k != 'embedding'}
-    #         for utterance in similar_utterances
-    #     ]
-    #     write_to_file(
-    #         content=filtered_utterances,
-    #         file="filtered_utterances.json",
-    #         output_dir_name="tmp"
-    #     )
-    # else:
-    #     filtered_utterances = retrieve_file(
-    #         file="filtered_utterances.json", 
-    #         dir_name="tmp"
-    #     )
-    
-    # consolidated_similar_utterances = consolidate_similar_utterances(filtered_utterances, similarity_threshold=0.35)
-   
-    # if False:
-    #     consolidated_embeddings = embed_dict_list(
-    #         embedding_function=create_openai_embedding,
-    #         chunk_dicts=consolidated_similar_utterances, 
-    #         key_to_embed="text",
-    #         model_choice="text-embedding-3-large"
-    #     )
-    #     write_to_file(
-    #         content=consolidated_embeddings,
-    #         file="consolidated_embeddings.json",
-    #         output_dir_name="tmp"
-    #     )
-    # else:
-    #     consolidated_embeddings = retrieve_file(
-    #         file="consolidated_embeddings.json", 
-    #         dir_name="tmp"
-    #     )
+    feed_dict = retrieve_file(
+        file="podcast_feed.json", 
+        dir_name="tmp"
+    )
 
-    # title = utterances_dict['extracted_title']
-    # additional_metadata = {
-    #     "title": title,
-    # }
-    # titled_embeddings = add_metadata_to_chunks(
-    #     chunks=consolidated_embeddings,
-    #     additional_metadata=additional_metadata
-    # )
-    # titled_embeddings = format_speakers_in_utterances(titled_embeddings)
-    # response = llm_response_with_query(
-    #     question="Is NVIDIA Cisco?",
-    #     chunks_with_embeddings=titled_embeddings,
-    #     embedding_function=create_openai_embedding,
-    #     query_model="text-embedding-3-large",
-    #     threshold=0.35,
-    #     max_query_chunks=3,
-    #     llm_function=openai_text_response,
-    #     llm_model="4"
-    # )
-     
+    aggregated_chunked_embeddings = []
+    if False:
+        for entry in feed_dict:
+            feed_title = entry['feed_title']
+            episode_title = entry['title']
+            utterances = entry['replaced_dict']['transcribed_utterances']
+            speakermod_utterances = convert_utterance_speaker_to_speakers(utterances)
+            embedded_utterances = embed_dict_list(
+                embedding_function=create_openai_embedding,
+                chunk_dicts=speakermod_utterances, 
+                key_to_embed="text",
+                model_choice="text-embedding-3-large"
+            )
+            similar_utterances = add_similarity_to_next_dict_item(embedded_utterances)
+            filtered_utterances = [
+                {k: v for k, v in utterance.items() if k != 'embedding'}
+                for utterance in similar_utterances
+            ]
+            consolidated_similar_utterances = consolidate_similar_utterances(filtered_utterances, similarity_threshold=0.35)
+            consolidated_embeddings = embed_dict_list(
+                embedding_function=create_openai_embedding,
+                chunk_dicts=consolidated_similar_utterances, 
+                key_to_embed="text",
+                model_choice="text-embedding-3-large"
+            )
+            additional_metadata = {
+                "title": f"{feed_title} - {episode_title}"
+            }
+            titled_embeddings = add_metadata_to_chunks(
+                chunks=consolidated_embeddings,
+                additional_metadata=additional_metadata
+            )
+            formatted_embeddings = format_speakers_in_utterances(titled_embeddings)
+            aggregated_chunked_embeddings.extend(formatted_embeddings)
+
+        write_to_file(
+            content=aggregated_chunked_embeddings,
+            file="aggregated_chunked_embeddings.json",
+            output_dir_name="tmp"
+        )
+    else:
+        aggregated_chunked_embeddings = retrieve_file(
+            file="aggregated_chunked_embeddings.json", 
+            dir_name="tmp"
+        )
+
+response = llm_response_with_query(
+    question="How does Apple fit in the AI ecosystem?",
+    chunks_with_embeddings=aggregated_chunked_embeddings,
+    embedding_function=create_openai_embedding,
+    query_model="text-embedding-3-large",
+    threshold=0.35,
+    max_query_chunks=5,
+    llm_function=anthropic_text_response,
+    llm_model="haiku"
+)
+
+# print(response)
+print(json.dumps(response['query_response'], indent=4))
+print(response['llm_response'])
