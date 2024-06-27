@@ -100,11 +100,11 @@ async def download_and_transcribe_multiple_episodes_by_date(
 
 async def main():
     feed_url = "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ"
-    start_date_input = "March 1, 2024"
-    end_date_input = "April 1, 2024"
+    start_date_input = "February 1, 2024"
+    end_date_input = "March 1, 2024"
     audio_dir_name = "tmp_audio"
 
-    if False:
+    if True:
         updated_entries = await download_and_transcribe_multiple_episodes_by_date(
             feed_url=feed_url,
             start_date=start_date_input,
@@ -203,7 +203,7 @@ template_args={
     "start_time": "start_time",
 }
 
-if True:
+if False:
     response = llm_response_with_query(
         question=question,
         chunks_with_embeddings=aggregated_chunked_embeddings,
