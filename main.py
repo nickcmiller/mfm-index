@@ -11,6 +11,7 @@ import json
 import os
 import logging
 from typing import List, Dict, Optional
+import traceback
 
 import asyncio
 from asyncio import Semaphore
@@ -30,58 +31,68 @@ async def download_and_transcribe_multiple_episodes_by_date(
     feed_entries = return_entries_by_date(feed_url, start_date, end_date)
     logging.info(f"Downloading {len(feed_entries)} episodes")
 
-    async def process_entry(entry: Dict[str, str], pbar: tqdm) -> Dict[str, str]:
-        for attempt in range(max_retries):
-            try:
-                pbar.set_description(f"Processing {entry['title'][:30]}...")
-                
-                entry['audio_file_path'] = await asyncio.to_thread(
-                    download_podcast_audio, 
-                    entry['url'], 
-                    entry['title'], 
-                    download_dir_name=audio_dir_name
-                )
-                pbar.set_postfix({"stage": "audio downloaded"})
-                
-                entry['audio_summary'] = await asyncio.to_thread(
-                    generate_episode_summary, 
-                    entry['summary'], 
-                    entry['feed_summary']
-                )
-                pbar.set_postfix({"stage": "summary generated"})
-                
-                entry['utterances_dict'] = await asyncio.to_thread(
-                    generate_assemblyai_utterances,
-                    entry['audio_file_path'], 
-                    output_dir_name=utterances_dir_name
-                )
-                pbar.set_postfix({"stage": "utterances generated"})
-                
-                entry['replaced_dict'] = await asyncio.to_thread(
-                    replace_speakers_in_assemblyai_utterances, 
-                    entry['utterances_dict'], 
-                    entry['audio_summary'],
-                    output_dir_name=utterances_replaced_dir_name
-                )
-                pbar.set_postfix({"stage": "utterances replaced"})
-                
-                pbar.update(1)
-                return entry
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    logging.warning(f"Error processing entry {entry['title']}, attempt {attempt + 1}: {str(e)}")
-                    pbar.set_postfix({"stage": f"retry {attempt + 1}/{max_retries}"})
-                    await asyncio.sleep(retry_delay * (2 ** attempt))
-                else:
-                    logging.error(f"Failed to process entry {entry['title']} after {max_retries} attempts: {str(e)}")
-                    pbar.set_postfix({"stage": "failed"})
-                    pbar.update(1)
-                    return None
+    semaphore = Semaphore(max_concurrent_tasks)
 
-    async with asyncio.Semaphore(max_concurrent_tasks) as semaphore:
-        with tqdm(total=len(feed_entries), desc="Processing episodes") as pbar:
-            tasks = [process_entry(entry, pbar) for entry in feed_entries]
-            updated_entries = await asyncio.gather(*tasks)
+    async def process_entry(entry: Dict[str, str], pbar: tqdm) -> Dict[str, str]:
+        async with semaphore:
+            for attempt in range(max_retries):
+                try:
+                    pbar.set_description(f"Processing {entry['title'][:30]}...")
+                    
+                    entry['audio_file_path'] = await asyncio.to_thread(
+                        download_podcast_audio, 
+                        entry['url'], 
+                        entry['title'], 
+                        download_dir_name=audio_dir_name
+                    )
+                    pbar.set_postfix({"stage": "audio downloaded"})
+                    
+                    entry['audio_summary'] = await asyncio.to_thread(
+                        generate_episode_summary, 
+                        entry['summary'], 
+                        entry['feed_summary']
+                    )
+                    pbar.set_postfix({"stage": "summary generated"})
+                    
+                    entry['utterances_dict'] = await asyncio.to_thread(
+                        generate_assemblyai_utterances,
+                        entry['audio_file_path'], 
+                        output_dir_name=utterances_dir_name
+                    )
+                    pbar.set_postfix({"stage": "utterances generated"})
+                    
+                    entry['replaced_dict'] = await asyncio.to_thread(
+                        replace_speakers_in_assemblyai_utterances, 
+                        entry['utterances_dict'], 
+                        entry['audio_summary'],
+                        output_dir_name=utterances_replaced_dir_name
+                    )
+                    pbar.set_postfix({"stage": "utterances replaced"})
+
+                    if os.path.exists(entry['audio_file_path']):
+                        os.remove(entry['audio_file_path'])
+                        logging.info(f"Removed audio file: {entry['audio_file_path']}")
+                    else:
+                        logging.warning(f"Audio file not found for cleanup: {entry['audio_file_path']}")
+                    
+                    pbar.update(1)
+                    return entry
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logging.warning(f"Error processing entry {entry['title']}, attempt {attempt + 1}: {str(e)}")
+                        logging.debug(f"Traceback: {traceback.format_exc()}")
+                        pbar.set_postfix({"stage": f"retry {attempt + 1}/{max_retries}"})
+                        await asyncio.sleep(retry_delay * (2 ** attempt))
+                    else:
+                        logging.error(f"Failed to process entry {entry['title']} after {max_retries} attempts: {str(e)}")
+                        logging.debug(f"Traceback: {traceback.format_exc()}")
+                        pbar.set_postfix({"stage": "failed"})
+                        pbar.update(1)
+            return None
+
+    with tqdm(total=len(feed_entries), desc="Processing episodes") as pbar:
+        tasks = [process_entry(entry, pbar) for entry in feed_entries]
+        updated_entries = await asyncio.gather(*tasks)
 
     successful_entries = [entry for entry in updated_entries if entry is not None]
     logging.info(f"Successfully processed {len(successful_entries)} out of {len(feed_entries)} episodes")
@@ -89,35 +100,46 @@ async def download_and_transcribe_multiple_episodes_by_date(
 
 async def main():
     feed_url = "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ"
-    start_date_input = "June 1, 2024"
-    end_date_input = "June 27, 2024"
+    start_date_input = "March 1, 2024"
+    end_date_input = "April 1, 2024"
     audio_dir_name = "tmp_audio"
 
-    if True:
+    if False:
         updated_entries = await download_and_transcribe_multiple_episodes_by_date(
             feed_url=feed_url,
             start_date=start_date_input,
             end_date=end_date_input,
             audio_dir_name=audio_dir_name,
         )
+        existing_entries = retrieve_file(
+            file="podcast_feed.json",
+            dir_name="tmp"
+        )
+        all_entries = existing_entries + updated_entries
         write_to_file(
-            content=updated_entries,
+            content=all_entries,
             file="podcast_feed.json",
             output_dir_name="tmp"
         )
+        write_to_file(
+            content=updated_entries,
+            file="updated_entries.json",
+            output_dir_name="tmp"
+        )
     else:
-        updated_entries = retrieve_file("podcast_feed.json", dir_name="tmp")
+        all_entries = retrieve_file("podcast_feed.json", dir_name="tmp")
+        updated_entries = retrieve_file("updated_entries.json", dir_name="tmp")
 
 if __name__ == "__main__":
     asyncio.run(main())
 
     feed_dict = retrieve_file(
-        file="podcast_feed.json", 
+        file="updated_entries.json", 
         dir_name="tmp"
     )
 
     aggregated_chunked_embeddings = []
-    if True:
+    if False:
         for entry in feed_dict:
             feed_title = entry['feed_title']
             episode_title = entry['title']
@@ -152,9 +174,13 @@ if __name__ == "__main__":
             formatted_embeddings = format_speakers_in_utterances(titled_embeddings)
             milliseconds_embeddings = milliseconds_to_minutes_in_utterances(formatted_embeddings)
             aggregated_chunked_embeddings.extend(milliseconds_embeddings)
-
+        existing_aggregated_chunked_embeddings = retrieve_file(
+            file="aggregated_chunked_embeddings.json", 
+            dir_name="tmp"
+        )
+        all_aggregated_chunked_embeddings = existing_aggregated_chunked_embeddings + aggregated_chunked_embeddings
         write_to_file(
-            content=aggregated_chunked_embeddings,
+            content=all_aggregated_chunked_embeddings,
             file="aggregated_chunked_embeddings.json",
             output_dir_name="tmp"
         )
@@ -163,7 +189,7 @@ if __name__ == "__main__":
             file="aggregated_chunked_embeddings.json", 
             dir_name="tmp"
         )
-question = "What is Apple up to?"
+question = "Why is NVIDIA's stock rising?"
 llm_system_prompt = f"""
 Use numbered references to cite the sources that are given to you. 
 Each timestamp is its own reference (e.g. [1] Title at 01:00). 
@@ -177,20 +203,22 @@ template_args={
     "start_time": "start_time",
 }
 
-response = llm_response_with_query(
-    question=question,
-    chunks_with_embeddings=aggregated_chunked_embeddings,
-    embedding_function=create_openai_embedding,
-    query_model="text-embedding-3-large",
-    threshold=0.35,
-    max_query_chunks=5,
-    llm_function=openai_text_response,
-    llm_model_choice="4o",
-    source_template=source_template,
-    template_args=template_args,
-)
+if True:
+    response = llm_response_with_query(
+        question=question,
+        chunks_with_embeddings=aggregated_chunked_embeddings,
+        embedding_function=create_openai_embedding,
+        query_model="text-embedding-3-large",
+        threshold=0.35,
+        max_query_chunks=5,
+        llm_function=groq_text_response,
+        llm_model_choice="llama3-70b",
+        source_template=source_template,
+        template_args=template_args,
+    )
 
-# print(response)
-# print(json.dumps(response['query_response'], indent=4))
-print(f"\n\nQuestion: {question}\n\n")
-print(f"Response: {response['llm_response']}\n\n")
+    # print(response)
+    print(len(response['query_response']))
+    print(json.dumps(response['query_response'], indent=4))
+    print(f"\n\nQuestion: {question}\n\n")
+    print(f"Response: {response['llm_response']}\n\n")
