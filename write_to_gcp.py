@@ -5,6 +5,7 @@ import sqlalchemy
 from sqlalchemy import inspect, text
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.types import TypeDecorator, UserDefinedType
+from contextlib import contextmanager
 from dotenv import load_dotenv
 import os
 import logging
@@ -72,7 +73,9 @@ def create_engine(
     logger.debug("SQLAlchemy engine with connection pooling created")
     return engine
 
-def ensure_pgvector_extension(engine: Any) -> None:
+def ensure_pgvector_extension(
+    engine: Any
+) -> None:
     logger.info("Ensuring pgvector extension is enabled")
     try:
         with engine.connect() as conn:
@@ -116,6 +119,25 @@ def ensure_table_schema(
                     conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column} {sql_type}"))
             logging.info(f"Added columns {new_columns} to {table_name}")
 
+@contextmanager
+def get_db_engine(config: Config):
+    connector = create_connector()
+    try:
+        getconn = get_connection(config, connector)
+        engine = create_engine(getconn)
+        yield engine
+    finally:
+        connector.close()
+
+@contextmanager
+def get_db_connection(engine):
+    connection = engine.connect()
+    try:
+        yield connection
+    finally:
+        connection.close()
+
+
 def write_to_table(
     engine: Any, 
     table_name: str, 
@@ -125,7 +147,7 @@ def write_to_table(
     df = pd.DataFrame(data_object)
     
     try:
-        with engine.begin() as connection:
+        with get_db_connection(engine) as connection:
             ensure_table_schema(engine, table_name, df)
             
             columns = ', '.join(df.columns)
@@ -153,7 +175,7 @@ def read_from_table(
 ) -> pd.DataFrame:
     logger.info(f"Reading data from table '{table_name}'")
     try:
-        with engine.connect() as connection:
+        with get_db_connection(engine) as connection:
             query = f"SELECT * FROM {table_name}"
             df = pd.read_sql(query, connection)
         logger.info(f"Successfully read {len(df)} rows from table '{table_name}'")
@@ -165,33 +187,29 @@ def read_from_table(
 def main():
     logger.info("Starting main function")
     config = load_config()
-    connector = create_connector()
+    
     try:
-        getconn = get_connection(config, connector)
-        engine = create_engine(getconn)
-        logger.info("Engine with connection pooling created successfully")
-        
-        ensure_pgvector_extension(engine)
+        with get_db_engine(config) as engine:
+            logger.info("Engine with connection pooling created successfully")
+            
+            ensure_pgvector_extension(engine)
 
-        table_name = 'vector_table'
-        data_object = {
-            'id': [1, 2, 3],
-            'text': ['example1', 'example2', 'example3'],
-            'embedding': [np.random.rand(128).tolist() for _ in range(3)]
-        }
+            table_name = 'vector_table'
+            data_object = {
+                'id': [1, 2, 3],
+                'text': ['example1', 'example2', 'example3'],
+                'embedding': [np.random.rand(128).tolist() for _ in range(3)]
+            }
 
-        write_to_table(engine, table_name, data_object)
-        df = read_from_table(engine, table_name)
-        print(df)
-        logger.info(f"Read {len(df)} rows from table '{table_name}'")
-        logger.debug(f"DataFrame head:\n{df.head()}")
-        
-        #delete_table(engine, table_name)
+            write_to_table(engine, table_name, data_object)
+            df = read_from_table(engine, table_name)
+            print(df)
+            logger.info(f"Read {len(df)} rows from table '{table_name}'")
+            logger.debug(f"DataFrame head:\n{df.head()}")
+            
+            #delete_table(engine, table_name)
     except Exception as e:
         logger.error(f"An error occurred in main: {e}", exc_info=True)
-    finally:
-        logger.info("Closing connector")
-        connector.close()
     logger.info("Main function completed")
 
 if __name__ == "__main__":
