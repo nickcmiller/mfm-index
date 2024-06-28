@@ -255,7 +255,10 @@ if __name__ == "__main__":
         main()
     else:
         logger.info("Deleting table")
-        config = load_config()
-
-        with get_db_engine(config) as engine:
-            delete_table(engine, table_name)
+        try:
+            config = load_config()
+            with get_db_engine(config) as engine:
+                delete_table(engine, table_name)
+            logger.info(f"Table '{table_name}' deleted successfully")
+        except Exception as e:
+            logger.error(f"Error deleting table '{table_name}': {e}", exc_info=True)
