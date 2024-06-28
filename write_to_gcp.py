@@ -3,6 +3,7 @@ import numpy as np
 from google.cloud.sql.connector import Connector
 import sqlalchemy
 from sqlalchemy import inspect, text
+from sqlalchemy.types import TypeDecorator, UserDefinedType
 from dotenv import load_dotenv
 import os
 import logging
@@ -11,6 +12,18 @@ from typing import Any, Dict, Callable
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+class Vector(TypeDecorator):
+    impl = UserDefinedType
+
+    def get_col_spec(self):
+        return "vector"
+
+    def bind_expression(self, bindvalue):
+        return bindvalue
+
+    def column_expression(self, col):
+        return col
 
 def load_env_variables() -> Dict[str, str]:
     logger.info("Loading environment variables")
@@ -23,10 +36,6 @@ def load_env_variables() -> Dict[str, str]:
     }
     logger.debug(f"Loaded environment variables: {', '.join(env_vars.keys())}")
     return env_vars
-
-def addapt_numpy_array(numpy_array: np.ndarray) -> Any:
-    logger.debug(f"Converting numpy array of shape {numpy_array.shape} to list")
-    return AsIs(repr(numpy_array.tolist()))
 
 def create_connector() -> Any:
     logger.info("Creating Google Cloud SQL connector")
@@ -75,8 +84,7 @@ def ensure_table_schema(
             columns = []
             for column, dtype in df.dtypes.items():
                 if isinstance(df[column].iloc[0], (np.ndarray, list)):
-                    vector_dim = len(df[column].iloc[0])
-                    sql_type = f"vector({vector_dim})"
+                    sql_type = Vector()
                 else:
                     sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
                 columns.append(f"{column} {sql_type}")
@@ -91,8 +99,7 @@ def ensure_table_schema(
             with engine.begin() as conn:
                 for column in new_columns:
                     if isinstance(df[column].iloc[0], (np.ndarray, list)):
-                        vector_dim = len(df[column].iloc[0])
-                        sql_type = f"vector({vector_dim})"
+                        sql_type = Vector()
                     else:
                         dtype = df[column].dtype
                         sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
