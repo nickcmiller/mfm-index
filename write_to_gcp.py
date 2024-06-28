@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 import os
 import logging
 from typing import Any, Dict, Callable
+from config import Config
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -25,34 +27,28 @@ class Vector(TypeDecorator):
     def column_expression(self, col):
         return col
 
-def load_env_variables() -> Dict[str, str]:
-    logger.info("Loading environment variables")
-    load_dotenv()
-    env_vars = {
-        "sql_user": os.getenv("SQL_USER"),
-        "sql_password": os.getenv("SQL_PASSWORD"),
-        "sql_host": os.getenv("SQL_HOST"),
-        "sql_database": os.getenv("SQL_DATABASE")
-    }
-    logger.debug(f"Loaded environment variables: {', '.join(env_vars.keys())}")
-    return env_vars
+def load_config() -> Config:
+    logger.info("Loading configuration")
+    config = Config()
+    logger.debug(f"Loaded configuration: {config}")
+    return config
 
 def create_connector() -> Any:
     logger.info("Creating Google Cloud SQL connector")
     return Connector()
 
 def get_connection(
-    env_vars: Dict[str, str], 
+    config: Config, 
     connector: Any
 ) -> Callable[[], Any]:
     logger.info("Creating database connection function")
     def getconn():
         logger.debug("Establishing database connection")
         conn = connector.connect(
-            instance_connection_string=env_vars["sql_host"],
-            user=env_vars["sql_user"],
-            password=env_vars["sql_password"],
-            db=env_vars["sql_database"],
+            instance_connection_string=config.SQL_HOST,
+            user=config.SQL_USER,
+            password=config.SQL_PASSWORD,
+            db=config.SQL_DATABASE,
             driver="pg8000"
         )
         logger.debug("Database connection established")
@@ -159,10 +155,10 @@ def read_from_table(
 
 def main():
     logger.info("Starting main function")
-    env_vars = load_env_variables()
+    config = load_config()
     connector = create_connector()
     try:
-        getconn = get_connection(env_vars, connector)
+        getconn = get_connection(config, connector)
         engine = create_engine(getconn)
         logger.info("Engine created successfully")
         
