@@ -5,6 +5,7 @@ import sqlalchemy
 from sqlalchemy import inspect, text
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.types import TypeDecorator, UserDefinedType
+from sqlalchemy.dialects.postgresql import insert
 from contextlib import contextmanager
 from dotenv import load_dotenv
 import os
@@ -141,7 +142,8 @@ def get_db_connection(engine):
 def write_to_table(
     engine: Any, 
     table_name: str, 
-    data_object: Dict[str, Any]
+    data_object: Dict[str, Any],
+    batch_size: int = 1000
 ) -> None:
     logger.info(f"Writing data to table '{table_name}'")
     df = pd.DataFrame(data_object)
@@ -150,21 +152,23 @@ def write_to_table(
         with get_db_connection(engine) as connection:
             ensure_table_schema(engine, table_name, df)
             
-            columns = ', '.join(df.columns)
-            placeholders = ', '.join([f':{col}' for col in df.columns])
-            insert_stmt = f"INSERT INTO {table_name} ({columns}) VALUES ({placeholders})"
+            # Convert list/array columns to string representation
+            for col in df.columns:
+                if isinstance(df[col].iloc[0], (np.ndarray, list)):
+                    df[col] = df[col].apply(lambda x: f"[{','.join(map(str, x))}]")
             
-            for index, row in df.iterrows():
-                logger.debug(f"Inserting row {index + 1} of {len(df)}")
-                row_dict = {
-                    col: f"[{','.join(map(str, row[col]))}]" if isinstance(row[col], (np.ndarray, list)) else row[col]
-                    for col in df.columns
-                }
+            # Prepare the insert statement
+            insert_stmt = insert(sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine))
+            
+            # Perform batch inserts
+            total_rows = len(df)
+            for i in range(0, total_rows, batch_size):
+                batch = df.iloc[i:i+batch_size].to_dict(orient='records')
+                connection.execute(insert_stmt, batch)
+                connection.commit()
+                logger.debug(f"Inserted batch {i//batch_size + 1} ({min(i+batch_size, total_rows)}/{total_rows} rows)")
                 
-                stmt = text(insert_stmt)
-                connection.execute(stmt, row_dict)
-                
-        logger.info(f"Successfully appended {len(df)} rows to table '{table_name}'")
+        logger.info(f"Successfully appended {total_rows} rows to table '{table_name}'")
     except Exception as e:
         logger.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
         raise
@@ -201,9 +205,8 @@ def main():
                 'embedding': [np.random.rand(128).tolist() for _ in range(3)]
             }
 
-            write_to_table(engine, table_name, data_object)
+            write_to_table(engine, table_name, data_object, batch_size=500)
             df = read_from_table(engine, table_name)
-            print(df)
             logger.info(f"Read {len(df)} rows from table '{table_name}'")
             logger.debug(f"DataFrame head:\n{df.head()}")
             
