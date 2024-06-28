@@ -21,17 +21,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class Vector(TypeDecorator):
-    impl = UserDefinedType
-
-    def get_col_spec(self):
-        return "vector"
-
-    def bind_expression(self, bindvalue):
-        return bindvalue
-
-    def column_expression(self, col):
-        return col
 
 def load_config() -> Config:
     logger.info("Loading configuration")
