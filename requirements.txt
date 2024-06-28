@@ -3,15 +3,14 @@ asyncio
 feedparser
 google-cloud-storage
 groq
-mysql-connector-python
 numpy
 openai
 scikit-learn
 sentence-transformers
+pg8000
 pyannote.audio
 pydub
 python-dateutil
 python-dotenv
-cloud-sql-python-connector[pymysql]
 tqdm
 yt_dlp
