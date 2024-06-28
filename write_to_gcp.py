@@ -6,6 +6,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.types import TypeDecorator, UserDefinedType
 from sqlalchemy.dialects.postgresql import insert
+from pgvector.sqlalchemy import Vector
 from contextlib import contextmanager
 from dotenv import load_dotenv
 import os
@@ -104,8 +105,10 @@ def ensure_table_schema(engine: Any, table_name: str, df: pd.DataFrame) -> None:
             with engine.begin() as conn:
                 columns = []
                 for column, dtype in df.dtypes.items():
-                    if isinstance(df[column].iloc[0], (np.ndarray, list)):
-                        sql_type = Vector()
+                    if column == 'embedding':
+                        sql_type = Vector(128)  # Adjust the dimension as needed
+                    elif isinstance(df[column].iloc[0], (np.ndarray, list)):
+                        sql_type = f"float[]"
                     else:
                         sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
                     columns.append(f"{column} {sql_type}")
@@ -120,7 +123,7 @@ def ensure_table_schema(engine: Any, table_name: str, df: pd.DataFrame) -> None:
                 with engine.begin() as conn:
                     for column in new_columns:
                         if isinstance(df[column].iloc[0], (np.ndarray, list)):
-                            sql_type = Vector()
+                            sql_type = f"float[]"
                         else:
                             dtype = df[column].dtype
                             sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
@@ -155,22 +158,19 @@ def get_db_connection(engine):
     retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
 )
 def write_to_table(
-    engine: Any, 
-    table_name: str, 
+    engine: Any,
+    table_name: str,
     data_object: Dict[str, Any],
     batch_size: int = 1000
 ) -> None:
     logger.info(f"Writing data to table '{table_name}'")
     df = pd.DataFrame(data_object)
-    
     try:
         with get_db_connection(engine) as connection:
             ensure_table_schema(engine, table_name, df)
-            
-            # Convert list/array columns to string representation
-            for col in df.columns:
-                if isinstance(df[col].iloc[0], (np.ndarray, list)):
-                    df[col] = df[col].apply(lambda x: f"[{','.join(map(str, x))}]")
+            # Convert embedding column to list of floats if it's a string representation
+            if 'embedding' in df.columns and isinstance(df['embedding'].iloc[0], str):
+                df['embedding'] = df['embedding'].apply(lambda x: eval(x) if isinstance(x, str) else x)
             
             # Prepare the insert statement
             insert_stmt = insert(sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine))
@@ -182,8 +182,8 @@ def write_to_table(
                 connection.execute(insert_stmt, batch)
                 connection.commit()
                 logger.debug(f"Inserted batch {i//batch_size + 1} ({min(i+batch_size, total_rows)}/{total_rows} rows)")
-                
-        logger.info(f"Successfully appended {total_rows} rows to table '{table_name}'")
+            
+            logger.info(f"Successfully appended {total_rows} rows to table '{table_name}'")
     except Exception as e:
         logger.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
         raise
@@ -206,6 +206,24 @@ def read_from_table(
         return df
     except Exception as e:
         logger.error(f"Error reading from table '{table_name}': {e}", exc_info=True)
+        raise
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
+)
+def delete_table(
+    engine: Any, 
+    table_name: str
+) -> None:
+    logger.info(f"Deleting table '{table_name}'")
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table_name}"))
+        logger.info(f"Successfully deleted table '{table_name}'")
+    except Exception as e:
+        logger.error(f"Error deleting table '{table_name}': {e}", exc_info=True)
         raise
 
 def main():
@@ -237,6 +255,8 @@ def main():
                 logger.debug(f"DataFrame head:\n{df.head()}")
             except Exception as e:
                 logger.error(f"Failed to read from table: {e}", exc_info=True)
+            
+            # delete_table(engine, table_name)
             
     except Exception as e:
         logger.error(f"An error occurred in main: {e}", exc_info=True)

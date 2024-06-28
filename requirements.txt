@@ -8,6 +8,7 @@ openai
 scikit-learn
 sentence-transformers
 pg8000
+pgvector
 pyannote.audio
 pydub
 python-dateutil
