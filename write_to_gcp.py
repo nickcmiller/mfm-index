@@ -3,6 +3,7 @@ import numpy as np
 from google.cloud.sql.connector import Connector
 import sqlalchemy
 from sqlalchemy import inspect, text
+from sqlalchemy.pool import QueuePool
 from sqlalchemy.types import TypeDecorator, UserDefinedType
 from dotenv import load_dotenv
 import os
@@ -58,9 +59,17 @@ def get_connection(
 def create_engine(
     getconn: Callable[[], Any]
 ) -> Any:
-    logger.info("Creating SQLAlchemy engine")
-    engine = sqlalchemy.create_engine("postgresql+pg8000://", creator=getconn)
-    logger.debug("SQLAlchemy engine created")
+    logger.info("Creating SQLAlchemy engine with connection pooling")
+    engine = sqlalchemy.create_engine(
+        "postgresql+pg8000://",
+        creator=getconn,
+        poolclass=QueuePool,
+        pool_size=5,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=1800
+    )
+    logger.debug("SQLAlchemy engine with connection pooling created")
     return engine
 
 def ensure_pgvector_extension(engine: Any) -> None:
@@ -160,7 +169,7 @@ def main():
     try:
         getconn = get_connection(config, connector)
         engine = create_engine(getconn)
-        logger.info("Engine created successfully")
+        logger.info("Engine with connection pooling created successfully")
         
         ensure_pgvector_extension(engine)
 
