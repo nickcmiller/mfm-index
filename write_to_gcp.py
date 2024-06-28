@@ -41,7 +41,10 @@ def create_connector() -> Any:
     logger.info("Creating Google Cloud SQL connector")
     return Connector()
 
-def get_connection(env_vars: Dict[str, str], connector: Any) -> Callable[[], Any]:
+def get_connection(
+    env_vars: Dict[str, str], 
+    connector: Any
+) -> Callable[[], Any]:
     logger.info("Creating database connection function")
     def getconn():
         logger.debug("Establishing database connection")
@@ -56,7 +59,9 @@ def get_connection(env_vars: Dict[str, str], connector: Any) -> Callable[[], Any
         return conn
     return getconn
 
-def create_engine(getconn: Callable[[], Any]) -> Any:
+def create_engine(
+    getconn: Callable[[], Any]
+) -> Any:
     logger.info("Creating SQLAlchemy engine")
     engine = sqlalchemy.create_engine("postgresql+pg8000://", creator=getconn)
     logger.debug("SQLAlchemy engine created")
@@ -106,7 +111,11 @@ def ensure_table_schema(
                     conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column} {sql_type}"))
             logging.info(f"Added columns {new_columns} to {table_name}")
 
-def write_to_table(engine: Any, table_name: str, data_object: Dict[str, Any]) -> None:
+def write_to_table(
+    engine: Any, 
+    table_name: str, 
+    data_object: Dict[str, Any]
+) -> None:
     logger.info(f"Writing data to table '{table_name}'")
     df = pd.DataFrame(data_object)
     
@@ -133,7 +142,10 @@ def write_to_table(engine: Any, table_name: str, data_object: Dict[str, Any]) ->
         logger.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
         raise
 
-def read_from_table(engine: Any, table_name: str) -> pd.DataFrame:
+def read_from_table(
+    engine: Any, 
+    table_name: str
+) -> pd.DataFrame:
     logger.info(f"Reading data from table '{table_name}'")
     try:
         with engine.connect() as connection:
