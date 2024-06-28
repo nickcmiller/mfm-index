@@ -12,6 +12,8 @@ import os
 import logging
 from typing import Any, Dict, Callable
 from gcp_sql_config import Config
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 
 
 # Configure logging
@@ -74,9 +76,12 @@ def create_engine(
     logger.debug("SQLAlchemy engine with connection pooling created")
     return engine
 
-def ensure_pgvector_extension(
-    engine: Any
-) -> None:
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
+)
+def ensure_pgvector_extension(engine: Any) -> None:
     logger.info("Ensuring pgvector extension is enabled")
     try:
         with engine.connect() as conn:
@@ -87,38 +92,43 @@ def ensure_pgvector_extension(
         logger.error(f"Error ensuring pgvector extension: {e}", exc_info=True)
         raise
 
-def ensure_table_schema(
-    engine: Any, 
-    table_name: str, 
-    df: pd.DataFrame
-) -> None:
-    inspector = inspect(engine)
-    if not inspector.has_table(table_name):
-        with engine.begin() as conn:
-            columns = []
-            for column, dtype in df.dtypes.items():
-                if isinstance(df[column].iloc[0], (np.ndarray, list)):
-                    sql_type = Vector()
-                else:
-                    sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
-                columns.append(f"{column} {sql_type}")
-            columns_str = ', '.join(columns)
-            conn.execute(text(f"CREATE TABLE {table_name} ({columns_str})"))
-        logging.info(f"Created table {table_name}")
-    else:
-        existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
-        new_columns = set(df.columns) - existing_columns
-
-        if new_columns:
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
+)
+def ensure_table_schema(engine: Any, table_name: str, df: pd.DataFrame) -> None:
+    try:
+        inspector = inspect(engine)
+        if not inspector.has_table(table_name):
             with engine.begin() as conn:
-                for column in new_columns:
+                columns = []
+                for column, dtype in df.dtypes.items():
                     if isinstance(df[column].iloc[0], (np.ndarray, list)):
                         sql_type = Vector()
                     else:
-                        dtype = df[column].dtype
                         sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
-                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column} {sql_type}"))
-            logging.info(f"Added columns {new_columns} to {table_name}")
+                    columns.append(f"{column} {sql_type}")
+                columns_str = ', '.join(columns)
+                conn.execute(text(f"CREATE TABLE {table_name} ({columns_str})"))
+            logging.info(f"Created table {table_name}")
+        else:
+            existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
+            new_columns = set(df.columns) - existing_columns
+
+            if new_columns:
+                with engine.begin() as conn:
+                    for column in new_columns:
+                        if isinstance(df[column].iloc[0], (np.ndarray, list)):
+                            sql_type = Vector()
+                        else:
+                            dtype = df[column].dtype
+                            sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
+                        conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column} {sql_type}"))
+                logging.info(f"Added columns {new_columns} to {table_name}")
+    except Exception as e:
+        logger.error(f"Error ensuring table schema: {e}", exc_info=True)
+        raise
 
 @contextmanager
 def get_db_engine(config: Config):
@@ -139,6 +149,11 @@ def get_db_connection(engine):
         connection.close()
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
+)
 def write_to_table(
     engine: Any, 
     table_name: str, 
@@ -173,6 +188,11 @@ def write_to_table(
         logger.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
         raise
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
+)
 def read_from_table(
     engine: Any, 
     table_name: str
@@ -205,12 +225,19 @@ def main():
                 'embedding': [np.random.rand(128).tolist() for _ in range(3)]
             }
 
-            write_to_table(engine, table_name, data_object, batch_size=500)
-            df = read_from_table(engine, table_name)
-            logger.info(f"Read {len(df)} rows from table '{table_name}'")
-            logger.debug(f"DataFrame head:\n{df.head()}")
+            try:
+                write_to_table(engine, table_name, data_object, batch_size=500)
+            except Exception as e:
+                logger.error(f"Failed to write to table: {e}", exc_info=True)
+                return
+
+            try:
+                df = read_from_table(engine, table_name)
+                logger.info(f"Read {len(df)} rows from table '{table_name}'")
+                logger.debug(f"DataFrame head:\n{df.head()}")
+            except Exception as e:
+                logger.error(f"Failed to read from table: {e}", exc_info=True)
             
-            #delete_table(engine, table_name)
     except Exception as e:
         logger.error(f"An error occurred in main: {e}", exc_info=True)
     logger.info("Main function completed")
