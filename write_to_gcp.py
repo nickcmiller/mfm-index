@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import os
 import logging
 from typing import Any, Dict, Callable
-from config import Config
+from gcp_sql_config import Config
 
 
 # Configure logging
