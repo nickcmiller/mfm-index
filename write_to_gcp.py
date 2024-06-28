@@ -225,12 +225,6 @@ def main():
             
             ensure_pgvector_extension(engine)
 
-            table_name = 'vector_table'
-            data_object = {
-                'id': [1, 2, 3],
-                'text': ['example1', 'example2', 'example3'],
-                'embedding': [np.random.rand(128).tolist() for _ in range(3)]
-            }
 
             try:
                 write_to_table(engine, table_name, data_object, batch_size=500)
@@ -245,11 +239,23 @@ def main():
             except Exception as e:
                 logger.error(f"Failed to read from table: {e}", exc_info=True)
             
-            # delete_table(engine, table_name)
-            
     except Exception as e:
         logger.error(f"An error occurred in main: {e}", exc_info=True)
     logger.info("Main function completed")
 
 if __name__ == "__main__":
-    main()
+    table_name = 'vector_table'
+    data_object = {
+        'id': [1, 2, 3],
+        'text': ['example1', 'example2', 'example3'],
+        'embedding': [np.random.rand(128).tolist() for _ in range(3)]
+    }   
+    
+    if False:
+        main()
+    else:
+        logger.info("Deleting table")
+        config = load_config()
+
+        with get_db_engine(config) as engine:
+            delete_table(engine, table_name)
