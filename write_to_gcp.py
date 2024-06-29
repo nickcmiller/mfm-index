@@ -245,13 +245,17 @@ def main():
 
 if __name__ == "__main__":
     table_name = 'vector_table'
+
     data_object = {
-        'id': [1, 2, 3],
-        'text': ['example1', 'example2', 'example3'],
-        'embedding': [np.random.rand(128).tolist() for _ in range(3)]
-    }   
+        'speakers': [],
+        'text': '',
+        'embedding': [],
+        'title': '',
+        'start_time': '',
+        'end_time': ''
+    }
     
-    if False:
+    if True:
         main()
     else:
         logger.info("Deleting table")

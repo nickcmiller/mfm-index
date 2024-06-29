@@ -104,7 +104,7 @@ async def main():
     end_date_input = "March 1, 2024"
     audio_dir_name = "tmp_audio"
 
-    if True:
+    if False:
         updated_entries = await download_and_transcribe_multiple_episodes_by_date(
             feed_url=feed_url,
             start_date=start_date_input,
@@ -222,3 +222,6 @@ if False:
     print(json.dumps(response['query_response'], indent=4))
     print(f"\n\nQuestion: {question}\n\n")
     print(f"Response: {response['llm_response']}\n\n")
+
+for key, value in aggregated_chunked_embeddings[0].items():
+    print(f"{key}: {type(value)}")
