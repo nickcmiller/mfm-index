@@ -87,7 +87,12 @@ def ensure_pgvector_extension(engine: Any) -> None:
     wait=wait_exponential(multiplier=1, min=4, max=10),
     retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
 )
-def ensure_table_schema(engine: Any, table_name: str, df: pd.DataFrame) -> None:
+def ensure_table_schema(
+    engine: Any, 
+    table_name: str, 
+    df: pd.DataFrame,
+    vector_dimensions: int = 128
+) -> None:
     try:
         inspector = inspect(engine)
         if not inspector.has_table(table_name):
@@ -95,7 +100,7 @@ def ensure_table_schema(engine: Any, table_name: str, df: pd.DataFrame) -> None:
                 columns = []
                 for column, dtype in df.dtypes.items():
                     if column == 'embedding':
-                        sql_type = Vector(128)  # Adjust the dimension as needed
+                        sql_type = Vector(vector_dimensions)
                     elif isinstance(df[column].iloc[0], (np.ndarray, list)):
                         sql_type = f"float[]"
                     else:
@@ -284,23 +289,17 @@ def main():
 
 if __name__ == "__main__":
     table_name = 'vector_table'
-
-    data_object = {
-        'speakers': [],
-        'text': '',
-        'embedding': [],
-        'title': '',
-        'start_time': '',
-        'end_time': ''
-    }
+    aggregated_chunked_embeddings = retrieve_file(
+        file="aggregated_chunked_embeddings.json",
+        dir_name="tmp"
+    )
+    print(aggregated_chunked_embeddings[0].keys()) #dict_keys(['speakers', 'text', 'embedding', 'title', 'start_time', 'end_time'])
+    
+    data_object = aggregated_chunked_embeddings[0]
     
     if True:
         main()
-        # aggregated_chunked_embeddings = retrieve_file(
-        #     file="aggregated_chunked_embeddings.json",
-        #     dir_name="tmp"
-        # )
-        # print(aggregated_chunked_embeddings[0].keys()) #dict_keys(['speakers', 'text', 'embedding', 'title', 'start_time', 'end_time'])
+        
         # list_of_objects = aggregated_chunked_embeddings[:10]
         # write_list_of_objects_to_table(engine, table_name, list_of_objects, batch_size=1000)
     else:
