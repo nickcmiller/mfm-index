@@ -11,10 +11,10 @@ from contextlib import contextmanager
 from dotenv import load_dotenv
 import os
 import logging
-from typing import Any, Dict, Callable
+from typing import Any, Dict, Callable, List
 from gcp_sql_config import Config
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
+from genai_toolbox.helper_functions.string_helpers import retrieve_file
 
 
 # Configure logging
@@ -182,6 +182,45 @@ def write_to_table(
     wait=wait_exponential(multiplier=1, min=4, max=10),
     retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
 )
+def write_list_of_objects_to_table(
+    engine: Any,
+    table_name: str,
+    data_list: List[Dict[str, Any]],
+    batch_size: int = 1000
+) -> None:
+    if not data_list:
+        logger.warning(f"Empty data list provided for table '{table_name}'. No action taken.")
+        return
+
+    logger.info(f"Writing {len(data_list)} objects to table '{table_name}'")
+    start_time = time.time()
+
+    try:
+        with get_db_connection(engine) as connection:
+            df_sample = pd.DataFrame([data_list[0]])
+            ensure_table_schema(engine, table_name, df_sample)
+            
+            insert_stmt = insert(sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine))
+            
+            with connection.begin():
+                total_objects = len(data_list)
+                for i in range(0, total_objects, batch_size):
+                    batch = data_list[i:i+batch_size]
+                    connection.execute(insert_stmt, batch)
+                    logger.debug(f"Processed batch {i//batch_size + 1} ({min(i+batch_size, total_objects)}/{total_objects} objects)")
+            
+        elapsed_time = time.time() - start_time
+        logger.info(f"Successfully appended {total_objects} objects to table '{table_name}' in {elapsed_time:.2f} seconds")
+    except Exception as e:
+        logger.error(f"Error writing list of objects to table '{table_name}': {e}", exc_info=True)
+        raise
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10),
+    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
+)
 def read_from_table(
     engine: Any, 
     table_name: str
@@ -257,6 +296,13 @@ if __name__ == "__main__":
     
     if True:
         main()
+        # aggregated_chunked_embeddings = retrieve_file(
+        #     file="aggregated_chunked_embeddings.json",
+        #     dir_name="tmp"
+        # )
+        # print(aggregated_chunked_embeddings[0].keys()) #dict_keys(['speakers', 'text', 'embedding', 'title', 'start_time', 'end_time'])
+        # list_of_objects = aggregated_chunked_embeddings[:10]
+        # write_list_of_objects_to_table(engine, table_name, list_of_objects, batch_size=1000)
     else:
         logger.info("Deleting table")
         try:
