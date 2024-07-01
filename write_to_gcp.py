@@ -10,8 +10,9 @@ from pgvector.sqlalchemy import Vector
 from contextlib import contextmanager
 from dotenv import load_dotenv
 import os
+import json
 import logging
-from typing import Any, Dict, Callable, List
+from typing import Any, Dict, Callable, List, Optional
 from gcp_sql_config import Config
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
@@ -90,39 +91,31 @@ def ensure_pgvector_extension(engine: Any) -> None:
 def ensure_table_schema(
     engine: Any, 
     table_name: str, 
-    df: pd.DataFrame,
-    vector_dimensions: int = 128
+    data_object: Dict[str, Any],
+    vector_dimensions: int = 3072
 ) -> None:
     try:
         inspector = inspect(engine)
         if not inspector.has_table(table_name):
             with engine.begin() as conn:
                 columns = []
-                for column, dtype in df.dtypes.items():
+                for column, value in data_object.items():
                     if column == 'embedding':
                         sql_type = Vector(vector_dimensions)
-                    elif isinstance(df[column].iloc[0], (np.ndarray, list)):
-                        sql_type = f"float[]"
+                    elif isinstance(value, str):
+                        sql_type = "TEXT"
+                    elif isinstance(value, (int, np.integer)):
+                        sql_type = "INTEGER"
+                    elif isinstance(value, (float, np.float64)):
+                        sql_type = "FLOAT"
                     else:
-                        sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
+                        sql_type = "TEXT"
                     columns.append(f"{column} {sql_type}")
                 columns_str = ', '.join(columns)
                 conn.execute(text(f"CREATE TABLE {table_name} ({columns_str})"))
             logging.info(f"Created table {table_name}")
         else:
-            existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
-            new_columns = set(df.columns) - existing_columns
-
-            if new_columns:
-                with engine.begin() as conn:
-                    for column in new_columns:
-                        if isinstance(df[column].iloc[0], (np.ndarray, list)):
-                            sql_type = f"float[]"
-                        else:
-                            dtype = df[column].dtype
-                            sql_type = 'VARCHAR(255)' if dtype == 'object' else 'FLOAT' if dtype == 'float64' else 'INT'
-                        conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column} {sql_type}"))
-                logging.info(f"Added columns {new_columns} to {table_name}")
+            logging.info(f"Table {table_name} already exists")
     except Exception as e:
         logger.error(f"Error ensuring table schema: {e}", exc_info=True)
         raise
@@ -146,41 +139,70 @@ def get_db_connection(engine):
         connection.close()
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
-)
+
+
+def serialize_complex_types(obj):
+    if isinstance(obj, (list, dict, set)):
+        return json.dumps(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
+
+def deserialize_complex_types(obj):
+    if isinstance(obj, str):
+        try:
+            return json.loads(obj)
+        except json.JSONDecodeError:
+            return obj
+    return obj
+
 def write_to_table(
     engine: Any,
     table_name: str,
     data_object: Dict[str, Any],
-    batch_size: int = 1000
+    unique_columns: Optional[List[str]] = None
 ) -> None:
     logger.info(f"Writing data to table '{table_name}'")
-    df = pd.DataFrame(data_object)
+
     try:
+        # Serialize complex types, except for 'embedding'
+        serialized_data = {
+            k: serialize_complex_types(v) if k != 'embedding' else v 
+            for k, v in data_object.items()
+        }
+
+        # Convert embedding to list if it's a numpy array
+        if 'embedding' in serialized_data and isinstance(serialized_data['embedding'], np.ndarray):
+            serialized_data['embedding'] = serialized_data['embedding'].tolist()
+
         with get_db_connection(engine) as connection:
-            ensure_table_schema(engine, table_name, df)
-            # Convert embedding column to list of floats if it's a string representation
-            if 'embedding' in df.columns and isinstance(df['embedding'].iloc[0], str):
-                df['embedding'] = df['embedding'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+            # Ensure the table exists with the correct schema
+            ensure_table_schema(engine, table_name, serialized_data)
             
             # Prepare the insert statement
-            insert_stmt = insert(sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine))
+            table = sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine)
             
-            # Perform batch inserts
-            total_rows = len(df)
-            for i in range(0, total_rows, batch_size):
-                batch = df.iloc[i:i+batch_size].to_dict(orient='records')
-                connection.execute(insert_stmt, batch)
-                connection.commit()
-                logger.debug(f"Inserted batch {i//batch_size + 1} ({min(i+batch_size, total_rows)}/{total_rows} rows)")
+            # Create the insert statement
+            insert_stmt = insert(table).values(serialized_data)
             
-            logger.info(f"Successfully appended {total_rows} rows to table '{table_name}'")
+            # If there are unique columns, create an upsert statement
+            if unique_columns:
+                update_dict = {c.name: c for c in insert_stmt.excluded if c.name not in unique_columns}
+                insert_stmt = insert_stmt.on_conflict_do_update(
+                    index_elements=unique_columns,
+                    set_=update_dict
+                )
+                operation = 'upserted'
+            else:
+                operation = 'inserted'
+            
+            # Execute the insert/upsert
+            connection.execute(insert_stmt)
+            connection.commit()
+            
+            logger.info(f"Successfully {operation} 1 row to table '{table_name}'")
     except Exception as e:
         logger.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
-        raise
 
 @retry(
     stop=stop_after_attempt(3),
@@ -191,33 +213,51 @@ def write_list_of_objects_to_table(
     engine: Any,
     table_name: str,
     data_list: List[Dict[str, Any]],
+    unique_columns: Optional[List[str]] = None,
     batch_size: int = 1000
 ) -> None:
     if not data_list:
-        logger.warning(f"Empty data list provided for table '{table_name}'. No action taken.")
+        logger.info(f"No data to write to table '{table_name}'")
         return
 
     logger.info(f"Writing {len(data_list)} objects to table '{table_name}'")
-    start_time = time.time()
 
     try:
-        with get_db_connection(engine) as connection:
-            df_sample = pd.DataFrame([data_list[0]])
-            ensure_table_schema(engine, table_name, df_sample)
+        with engine.begin() as connection:
+            ensure_table_schema(engine, table_name, data_list[0])
             
-            insert_stmt = insert(sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine))
+            table = sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine)
+            insert_stmt = insert(table)
             
-            with connection.begin():
-                total_objects = len(data_list)
-                for i in range(0, total_objects, batch_size):
-                    batch = data_list[i:i+batch_size]
-                    connection.execute(insert_stmt, batch)
-                    logger.debug(f"Processed batch {i//batch_size + 1} ({min(i+batch_size, total_objects)}/{total_objects} objects)")
+            if unique_columns:
+                update_dict = {c.name: c for c in insert_stmt.excluded if c.name not in unique_columns}
+                insert_stmt = insert_stmt.on_conflict_do_update(
+                    index_elements=unique_columns,
+                    set_=update_dict
+                )
             
-        elapsed_time = time.time() - start_time
-        logger.info(f"Successfully appended {total_objects} objects to table '{table_name}' in {elapsed_time:.2f} seconds")
+            for i in range(0, len(data_list), batch_size):
+                batch = data_list[i:i+batch_size]
+                serialized_batch = []
+                for data_object in batch:
+                    # Serialize complex types, except for 'embedding'
+                    serialized_data = {
+                        k: serialize_complex_types(v) if k != 'embedding' else v 
+                        for k, v in data_object.items()
+                    }
+                    
+                    # Convert embedding to list if it's a numpy array
+                    if 'embedding' in serialized_data and isinstance(serialized_data['embedding'], np.ndarray):
+                        serialized_data['embedding'] = serialized_data['embedding'].tolist()
+                    
+                    serialized_batch.append(serialized_data)
+                
+                connection.execute(insert_stmt, serialized_batch)
+                logger.info(f"Successfully processed {len(serialized_batch)} rows for table '{table_name}'")
+        
+        logger.info(f"Finished writing all {len(data_list)} objects to table '{table_name}'")
     except Exception as e:
-        logger.error(f"Error writing list of objects to table '{table_name}': {e}", exc_info=True)
+        logger.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
         raise
 
 
@@ -228,13 +268,25 @@ def write_list_of_objects_to_table(
 )
 def read_from_table(
     engine: Any, 
-    table_name: str
+    table_name: str,
+    limit: int = None,
+    where_clause: str = None
 ) -> pd.DataFrame:
     logger.info(f"Reading data from table '{table_name}'")
     try:
         with get_db_connection(engine) as connection:
             query = f"SELECT * FROM {table_name}"
+            if where_clause:
+                query += f" WHERE {where_clause}"
+            if limit:
+                query += f" LIMIT {limit}"
             df = pd.read_sql(query, connection)
+        
+        # Deserialize complex types for all columns except 'embedding'
+        for column in df.columns:
+            if column != 'embedding':
+                df[column] = df[column].apply(deserialize_complex_types)
+        
         logger.info(f"Successfully read {len(df)} rows from table '{table_name}'")
         return df
     except Exception as e:
@@ -270,8 +322,14 @@ def main():
             ensure_pgvector_extension(engine)
 
 
+            # try:
+            #     write_to_table(engine, table_name, data_object)
+            # except Exception as e:
+            #     logger.error(f"Failed to write to table: {e}", exc_info=True)
+            #     return
+
             try:
-                write_to_table(engine, table_name, data_object, batch_size=500)
+                write_list_of_objects_to_table(engine, table_name, list_of_objects, batch_size=1000)
             except Exception as e:
                 logger.error(f"Failed to write to table: {e}", exc_info=True)
                 return
@@ -279,15 +337,18 @@ def main():
             try:
                 df = read_from_table(engine, table_name)
                 logger.info(f"Read {len(df)} rows from table '{table_name}'")
-                logger.debug(f"DataFrame head:\n{df.head()}")
+                print(df.head())
+                print(df['speakers'])
             except Exception as e:
                 logger.error(f"Failed to read from table: {e}", exc_info=True)
+            
             
     except Exception as e:
         logger.error(f"An error occurred in main: {e}", exc_info=True)
     logger.info("Main function completed")
 
 if __name__ == "__main__":
+    import json 
     table_name = 'vector_table'
     aggregated_chunked_embeddings = retrieve_file(
         file="aggregated_chunked_embeddings.json",
@@ -296,12 +357,15 @@ if __name__ == "__main__":
     print(aggregated_chunked_embeddings[0].keys()) #dict_keys(['speakers', 'text', 'embedding', 'title', 'start_time', 'end_time'])
     
     data_object = aggregated_chunked_embeddings[0]
-    
+    filtered_data_object = {key: value for key, value in data_object.items() if key != 'embedding'}
+    for key, value in filtered_data_object.items():
+        print(f"{key}: {type(value)}")
+    print(json.dumps(filtered_data_object, indent=4))
+    list_of_objects = aggregated_chunked_embeddings[:3]
     if True:
         main()
         
-        # list_of_objects = aggregated_chunked_embeddings[:10]
-        # write_list_of_objects_to_table(engine, table_name, list_of_objects, batch_size=1000)
+        
     else:
         logger.info("Deleting table")
         try:
