@@ -172,8 +172,8 @@ if __name__ == "__main__":
                 additional_metadata=additional_metadata
             )
             formatted_embeddings = format_speakers_in_utterances(titled_embeddings)
-            milliseconds_embeddings = milliseconds_to_minutes_in_utterances(formatted_embeddings)
-            aggregated_chunked_embeddings.extend(milliseconds_embeddings)
+            minutes_embeddings = milliseconds_to_minutes_in_utterances(formatted_embeddings)
+            aggregated_chunked_embeddings.extend(minutes_embeddings)
         existing_aggregated_chunked_embeddings = retrieve_file(
             file="aggregated_chunked_embeddings.json", 
             dir_name="tmp"
