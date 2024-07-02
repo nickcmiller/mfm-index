@@ -1,8 +1,7 @@
-import pandas as pd
 import numpy as np
 from google.cloud.sql.connector import Connector
 import sqlalchemy
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, select
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.types import TypeDecorator, UserDefinedType
 from sqlalchemy.dialects.postgresql import insert
@@ -271,24 +270,27 @@ def read_from_table(
     table_name: str,
     limit: int = None,
     where_clause: str = None
-) -> pd.DataFrame:
+) -> List[Dict[str, Any]]:
     logger.info(f"Reading data from table '{table_name}'")
     try:
-        with get_db_connection(engine) as connection:
-            query = f"SELECT * FROM {table_name}"
+        with engine.connect() as connection:
+            query = select(text("*")).select_from(text(table_name))
             if where_clause:
-                query += f" WHERE {where_clause}"
+                query = query.where(text(where_clause))
             if limit:
-                query += f" LIMIT {limit}"
-            df = pd.read_sql(query, connection)
-        
+                query = query.limit(limit)
+            
+            result = connection.execute(query)
+            rows = [row._asdict() for row in result]
+
         # Deserialize complex types for all columns except 'embedding'
-        for column in df.columns:
-            if column != 'embedding':
-                df[column] = df[column].apply(deserialize_complex_types)
-        
-        logger.info(f"Successfully read {len(df)} rows from table '{table_name}'")
-        return df
+        for row in rows:
+            for key, value in row.items():
+                if key != 'embedding':
+                    row[key] = deserialize_complex_types(value)
+
+        logger.info(f"Successfully read {len(rows)} rows from table '{table_name}'")
+        return rows
     except Exception as e:
         logger.error(f"Error reading from table '{table_name}': {e}", exc_info=True)
         raise
@@ -335,10 +337,23 @@ def main():
                 return
 
             try:
-                df = read_from_table(engine, table_name)
-                logger.info(f"Read {len(df)} rows from table '{table_name}'")
-                print(df.head())
-                print(df['speakers'])
+                rows = read_from_table(engine, table_name)
+                logger.info(f"Read {len(rows)} rows from table '{table_name}'")
+                if rows:
+                    print("Available keys in the first row:", rows[0].keys())
+                    print("\nRow contents:")
+                    for index, row in enumerate(rows, start=1):
+                        print(f"\nRow {index}:")
+                        for key, value in row.items():
+                            print(f"  {key}: {type(value)}")
+                            if key == 'embedding':
+                                print(f"    Length: {len(value)}")
+                            elif isinstance(value, (str, int, float)):
+                                print(f"    Value: {value}")
+                            elif isinstance(value, list) and len(value) > 0:
+                                print(f"    First element: {value[0]}")
+                            else:
+                                print(f"    Type: {type(value)}")
             except Exception as e:
                 logger.error(f"Failed to read from table: {e}", exc_info=True)
             
