@@ -3,10 +3,12 @@ import sqlalchemy
 from sqlalchemy.pool import QueuePool
 from typing import Any, Callable
 from google.cloud.sql.connector import Connector
+from contextlib import contextmanager
 
 from config.gcp_sql_config import Config
+from utils.logging import setup_logging
 
-logger = logging.getLogger(__name__)
+logger = setup_logging()
 
 def create_connector() -> Any:
     logger.info("Creating Google Cloud SQL connector")
@@ -45,3 +47,21 @@ def create_engine(
     )
     logger.debug("SQLAlchemy engine with connection pooling created")
     return engine
+
+@contextmanager
+def get_db_engine(config: Config):
+    connector = create_connector()
+    try:
+        getconn = get_connection(config, connector)
+        engine = create_engine(getconn)
+        yield engine
+    finally:
+        connector.close()
+
+@contextmanager
+def get_db_connection(engine):
+    connection = engine.connect()
+    try:
+        yield connection
+    finally:
+        connection.close()

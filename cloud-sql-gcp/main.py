@@ -21,35 +21,16 @@ from sqlalchemy import inspect, text, select
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.dialects.postgresql import insert
 
-from databases.connection import create_connector, get_connection, create_engine
-from config.gcp_sql_config import Config, load_config
+
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
+from config.gcp_sql_config import Config, load_config
+from databases.connection import create_connector, get_connection, create_engine, get_db_engine, get_db_connection
 from databases.operations import ensure_pgvector_extension, ensure_table_schema, write_to_table, write_list_of_objects_to_table, read_from_table, delete_table
+from utils.logging import setup_logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
-
-
-@contextmanager
-def get_db_engine(config: Config):
-    connector = create_connector()
-    try:
-        getconn = get_connection(config, connector)
-        engine = create_engine(getconn)
-        yield engine
-    finally:
-        connector.close()
-
-@contextmanager
-def get_db_connection(engine):
-    connection = engine.connect()
-    try:
-        yield connection
-    finally:
-        connection.close()
-
+logger = setup_logging()
 def main():
     logger.info("Starting main function")
     config = load_config()
@@ -76,21 +57,22 @@ def main():
             try:
                 rows = read_from_table(engine, table_name)
                 logger.info(f"Read {len(rows)} rows from table '{table_name}'")
-                if rows:
-                    print("Available keys in the first row:", rows[0].keys())
-                    print("\nRow contents:")
-                    for index, row in enumerate(rows, start=1):
-                        print(f"\nRow {index}:")
-                        for key, value in row.items():
-                            print(f"  {key}: {type(value)}")
-                            if key == 'embedding':
-                                print(f"    Length: {len(value)}")
-                            elif isinstance(value, (str, int, float)):
-                                print(f"    Value: {value}")
-                            elif isinstance(value, list) and len(value) > 0:
-                                print(f"    First element: {value[0]}")
-                            else:
-                                print(f"    Type: {type(value)}")
+                print(f"Available keys in the first row: {rows[0].keys()}")
+                # if rows:
+                #     print("Available keys in the first row:", rows[0].keys())
+                #     print("\nRow contents:")
+                #     for index, row in enumerate(rows, start=1):
+                #         print(f"\nRow {index}:")
+                #         for key, value in row.items():
+                #             print(f"  {key}: {type(value)}")
+                #             if key == 'embedding':
+                #                 print(f"    Length: {len(value)}")
+                #             elif isinstance(value, (str, int, float)):
+                #                 print(f"    Value: {value}")
+                #             elif isinstance(value, list) and len(value) > 0:
+                #                 print(f"    First element: {value[0]}")
+                #             else:
+                #                 print(f"    Type: {type(value)}")
             except Exception as e:
                 logger.error(f"Failed to read from table: {e}", exc_info=True)
             

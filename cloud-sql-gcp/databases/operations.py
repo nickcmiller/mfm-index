@@ -10,14 +10,13 @@ from sqlalchemy import inspect, text, select
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.dialects.postgresql import insert
 
-import logging
-logger = logging.getLogger(__name__)
+from utils.logging import setup_logging
+from utils.serialization import serialize_complex_types, deserialize_complex_types
+from utils.retry import db_retry_decorator
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
-)
+logger = setup_logging()
+
+@db_retry_decorator()
 def ensure_pgvector_extension(engine: Any) -> None:
     logger.info("Ensuring pgvector extension is enabled")
     try:
@@ -29,11 +28,7 @@ def ensure_pgvector_extension(engine: Any) -> None:
         logger.error(f"Error ensuring pgvector extension: {e}", exc_info=True)
         raise
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
-)
+@db_retry_decorator()
 def ensure_table_schema(
     engine: Any, 
     table_name: str, 
@@ -59,27 +54,12 @@ def ensure_table_schema(
                     columns.append(f"{column} {sql_type}")
                 columns_str = ', '.join(columns)
                 conn.execute(text(f"CREATE TABLE {table_name} ({columns_str})"))
-            logging.info(f"Created table {table_name}")
+            logger.info(f"Created table {table_name}")
         else:
-            logging.info(f"Table {table_name} already exists")
+            logger.info(f"Table {table_name} already exists")
     except Exception as e:
         logger.error(f"Error ensuring table schema: {e}", exc_info=True)
         raise
-
-def serialize_complex_types(obj):
-    if isinstance(obj, (list, dict, set)):
-        return json.dumps(obj)
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    return obj
-
-def deserialize_complex_types(obj):
-    if isinstance(obj, str):
-        try:
-            return json.loads(obj)
-        except json.JSONDecodeError:
-            return obj
-    return obj
 
 def write_to_table(
     engine: Any,
@@ -129,11 +109,7 @@ def write_to_table(
     except Exception as e:
         logger.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
-)
+@db_retry_decorator()
 def write_list_of_objects_to_table(
     engine: Any,
     table_name: str,
@@ -186,11 +162,7 @@ def write_list_of_objects_to_table(
         raise
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
-)
+@db_retry_decorator()
 def read_from_table(
     engine: Any, 
     table_name: str,
@@ -221,11 +193,7 @@ def read_from_table(
         logger.error(f"Error reading from table '{table_name}': {e}", exc_info=True)
         raise
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=4, max=10),
-    retry=retry_if_exception_type((sqlalchemy.exc.OperationalError, sqlalchemy.exc.DatabaseError))
-)
+@db_retry_decorator()
 def delete_table(
     engine: Any, 
     table_name: str
