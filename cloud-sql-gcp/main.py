@@ -2,25 +2,11 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-
-from genai_toolbox.helper_functions.string_helpers import retrieve_file
-
-import numpy as np
-import os
 import json
 import logging
 from typing import Any, Dict, Callable, List, Optional
 
-from contextlib import contextmanager
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
 from pgvector.sqlalchemy import Vector
-import sqlalchemy
-from sqlalchemy import inspect, text, select
-from sqlalchemy.pool import QueuePool
-from sqlalchemy.dialects.postgresql import insert
-
 
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
 from config.gcp_sql_config import Config, load_config
@@ -41,13 +27,6 @@ def main():
             
             ensure_pgvector_extension(engine)
 
-
-            # try:
-            #     write_to_table(engine, table_name, data_object)
-            # except Exception as e:
-            #     logger.error(f"Failed to write to table: {e}", exc_info=True)
-            #     return
-
             try:
                 write_list_of_objects_to_table(engine, table_name, list_of_objects, batch_size=1000)
             except Exception as e:
@@ -57,22 +36,7 @@ def main():
             try:
                 rows = read_from_table(engine, table_name)
                 logger.info(f"Read {len(rows)} rows from table '{table_name}'")
-                print(f"Available keys in the first row: {rows[0].keys()}")
-                # if rows:
-                #     print("Available keys in the first row:", rows[0].keys())
-                #     print("\nRow contents:")
-                #     for index, row in enumerate(rows, start=1):
-                #         print(f"\nRow {index}:")
-                #         for key, value in row.items():
-                #             print(f"  {key}: {type(value)}")
-                #             if key == 'embedding':
-                #                 print(f"    Length: {len(value)}")
-                #             elif isinstance(value, (str, int, float)):
-                #                 print(f"    Value: {value}")
-                #             elif isinstance(value, list) and len(value) > 0:
-                #                 print(f"    First element: {value[0]}")
-                #             else:
-                #                 print(f"    Type: {type(value)}")
+                logger.info(f"Available keys in the first row: {rows[0].keys()}")
             except Exception as e:
                 logger.error(f"Failed to read from table: {e}", exc_info=True)
             
