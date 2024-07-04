@@ -1,7 +1,7 @@
 from genai_toolbox.download_sources.podcast_functions import return_entries_by_date, download_podcast_audio, generate_episode_summary
 from genai_toolbox.transcription.assemblyai_functions import generate_assemblyai_utterances, replace_speakers_in_assemblyai_utterances
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
-from config import CONFIG
+from config import CONFIG, PODCAST_CONFIG
 
 from typing import List, Dict, Optional
 import os
@@ -95,18 +95,22 @@ async def download_and_transcribe_multiple_episodes_by_date(
     logging.info(f"Successfully processed {len(successful_entries)} out of {len(feed_entries)} episodes")
     return successful_entries
 
-def process_podcast_feed():
+def process_podcast_feed(
+    config: dict,
+    podcast_config: dict
+    
+):
     new_episodes = asyncio.run(download_and_transcribe_multiple_episodes_by_date(
-        feed_url=CONFIG['feed_url'],
-        start_date=CONFIG['start_date'],
-        end_date=CONFIG['end_date'],
-        audio_dir_name=CONFIG['audio_dir_name'],
+        feed_url=config['feed_url'],
+        start_date=config['start_date'],
+        end_date=config['end_date'],
+        audio_dir_name=podcast_config['audio_dir_name'],
     ))
 
     write_to_file(
         content=new_episodes, 
-        file="new_episodes.json", 
-        output_dir_name=CONFIG['output_dir_name']
+        file=podcast_config['output_file_name'], 
+        output_dir_name=podcast_config['output_dir_name']
     )
 
     return new_episodes

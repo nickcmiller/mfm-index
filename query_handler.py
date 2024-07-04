@@ -4,10 +4,16 @@ from genai_toolbox.text_prompting.model_calls import groq_text_response, openai_
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
 import json
 
-def handle_query(question: str, config: dict):
+def handle_query(
+    query_config: dict
+) -> dict:
+    question = query_config['question']
+    aggregated_chunked_embeddings = query_config['input_file_name']
+    dir_name = query_config['input_dir_name']
+
     aggregated_chunked_embeddings = retrieve_file(
-        file="aggregated_chunked_embeddings.json", 
-        dir_name="tmp"
+        file=aggregated_chunked_embeddings, 
+        dir_name=dir_name
     )
 
     llm_system_prompt = """
@@ -37,15 +43,17 @@ def handle_query(question: str, config: dict):
         template_args=template_args,
     )
 
-    print(f"Number of query responses: {len(response['query_response'])}")
-    print(json.dumps(response['query_response'], indent=4))
-    print(f"\n\nQuestion: {question}\n\n")
-    print(f"Response: {response['llm_response']}\n\n")
-
     return response
 
 if __name__ == "__main__":
     # This is for testing the module directly
     test_question = "Why is NVIDIA's stock rising?"
     test_config = {}  # Add any necessary configuration here
-    handle_query(test_question, test_config)
+    aggregated_chunked_embeddings = "aggregated_chunked_embeddings.json"
+    dir_name = "tmp"
+    handle_query(
+        question=test_question, 
+        config=test_config, 
+        aggregated_chunked_embeddings=aggregated_chunked_embeddings, 
+        dir_name=dir_name
+    )
