@@ -1,7 +1,7 @@
 CONFIG = {
     'feed_url': "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ",
-    'start_date': "January 1, 2024",
-    'end_date': "February 1, 2024",
+    'start_date': "February 1, 2024",
+    'end_date': "March 1, 2024",
     'process_new_episodes': False,
     'generate_embeddings': False,
     'run_query': True,
@@ -23,7 +23,7 @@ EMBEDDING_CONFIG = {
 }
 
 QUERY_CONFIG = {
-    'question': "What happened in January",
+    'question': "What do EU regulators think about Google?",
     'input_file_name': EMBEDDING_CONFIG['output_file_name'],
     'input_dir_name': EMBEDDING_CONFIG['output_dir_name']
 }

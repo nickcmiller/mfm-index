@@ -44,16 +44,3 @@ def handle_query(
     )
 
     return response
-
-if __name__ == "__main__":
-    # This is for testing the module directly
-    test_question = "Why is NVIDIA's stock rising?"
-    test_config = {}  # Add any necessary configuration here
-    aggregated_chunked_embeddings = "aggregated_chunked_embeddings.json"
-    dir_name = "tmp"
-    handle_query(
-        question=test_question, 
-        config=test_config, 
-        aggregated_chunked_embeddings=aggregated_chunked_embeddings, 
-        dir_name=dir_name
-    )
