@@ -19,8 +19,5 @@ def main():
         print(f"\n\nQuestion: {question}\n\n")
         print(f"Response: {response['llm_response']}\n\n")
 
-        
-        
-
 if __name__ == "__main__":
     main()

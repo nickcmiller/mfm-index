@@ -30,7 +30,10 @@ async def download_and_transcribe_multiple_episodes_by_date(
 
     semaphore = Semaphore(max_concurrent_tasks)
 
-    async def process_entry(entry: Dict[str, str], pbar: tqdm) -> Dict[str, str]:
+    async def process_entry(
+        entry: Dict[str, str], 
+        pbar: tqdm
+    ) -> Dict[str, str]:
         async with semaphore:
             for attempt in range(max_retries):
                 try:

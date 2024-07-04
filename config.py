@@ -23,7 +23,7 @@ EMBEDDING_CONFIG = {
 }
 
 QUERY_CONFIG = {
-    'question': "What do EU regulators think about Google?",
+    'question': "What do Ben and John think of the Vision Pro?",
     'input_file_name': EMBEDDING_CONFIG['output_file_name'],
     'input_dir_name': EMBEDDING_CONFIG['output_dir_name']
 }
