@@ -8,7 +8,9 @@ def main():
         process_podcast_feed(CONFIG, PODCAST_CONFIG)
     
     if CONFIG['generate_embeddings']:
-        generate_embeddings(EMBEDDING_CONFIG)
+       response = generate_embeddings(EMBEDDING_CONFIG)
+       for utterance in response:
+           print(utterance['id'])
     if CONFIG['run_query']:
         response = handle_query(QUERY_CONFIG)
 

@@ -3,8 +3,8 @@ CONFIG = {
     'start_date': "February 1, 2024",
     'end_date': "March 1, 2024",
     'process_new_episodes': False,
-    'generate_embeddings': False,
-    'run_query': True,
+    'generate_embeddings': True,
+    'run_query': False,
 }
 
 PODCAST_CONFIG = {
@@ -16,9 +16,9 @@ PODCAST_CONFIG = {
 EMBEDDING_CONFIG = {
     'input_podcast_file': PODCAST_CONFIG['output_file_name'],
     'input_podcast_dir': PODCAST_CONFIG['output_dir_name'],
-    'existing_embeddings_file': "aggregated_chunked_embeddings.json",
+    'existing_embeddings_file': "test_embeddings.json",
     'existing_embeddings_dir': "tmp",
-    'output_file_name': "aggregated_chunked_embeddings.json",
+    'output_file_name': "test_embeddings.json",
     'output_dir_name': "tmp"
 }
 

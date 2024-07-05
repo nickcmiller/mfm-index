@@ -1,5 +1,7 @@
 import logging
 from typing import List, Dict
+import re
+
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding, embed_dict_list, add_similarity_to_next_dict_item
 from genai_toolbox.chunk_and_embed.chunking_functions import convert_utterance_speaker_to_speakers, consolidate_similar_utterances, add_metadata_to_chunks, format_speakers_in_utterances, milliseconds_to_minutes_in_utterances
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
@@ -36,14 +38,20 @@ def process_entry(
     additional_metadata = {
         "title": f"{feed_title} - {episode_date}: {episode_title}"
     }
-    titled_embeddings = add_metadata_to_chunks(
+    titled_utterances = add_metadata_to_chunks(
         chunks=consolidated_embeddings,
         additional_metadata=additional_metadata
     )
-    formatted_embeddings = format_speakers_in_utterances(titled_embeddings)
-    minutes_embeddings = milliseconds_to_minutes_in_utterances(formatted_embeddings)
+    formatted_utterances = format_speakers_in_utterances(titled_utterances)
+    minutes_utterances = milliseconds_to_minutes_in_utterances(formatted_utterances)
     
-    return minutes_embeddings
+    for utterance in minutes_utterances:
+        start = utterance['start']
+        feed_regex = re.sub(r'[^a-zA-Z0-9\s]', '', feed_title)
+        episode_regex = re.sub(r'[^a-zA-Z0-9\s]', '', episode_title)
+        utterance['id'] = f"{start} {feed_regex} {episode_regex}".replace(' ', '-')
+    
+    return minutes_utterances
     
 def load_existing_embeddings(
     embedding_config: Dict
@@ -71,7 +79,10 @@ def generate_embeddings(
     ]
     
     all_aggregated_chunked_embeddings = load_existing_embeddings(embedding_config)
-    all_aggregated_chunked_embeddings.extend(aggregated_chunked_embeddings)
+    if all_aggregated_chunked_embeddings:
+        all_aggregated_chunked_embeddings.extend(aggregated_chunked_embeddings)
+    else:
+        all_aggregated_chunked_embeddings = aggregated_chunked_embeddings
     
     write_to_file(
         content=all_aggregated_chunked_embeddings,
