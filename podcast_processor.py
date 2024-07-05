@@ -30,65 +30,61 @@ async def download_and_transcribe_multiple_episodes_by_date(
 
     semaphore = Semaphore(max_concurrent_tasks)
 
-    async def process_entry(
-        entry: Dict[str, str], 
-        pbar: tqdm
-    ) -> Dict[str, str]:
+    async def process_entry(entry: Dict[str, str], pbar: tqdm) -> Dict[str, str]:
         async with semaphore:
-            for attempt in range(max_retries):
-                try:
-                    pbar.set_description(f"Processing {entry['title'][:30]}...")
-                    
-                    entry['audio_file_path'] = await asyncio.to_thread(
-                        download_podcast_audio, 
-                        entry['url'], 
-                        entry['title'], 
-                        download_dir_name=audio_dir_name
-                    )
-                    pbar.set_postfix({"stage": "audio downloaded"})
-                    
-                    entry['audio_summary'] = await asyncio.to_thread(
-                        generate_episode_summary, 
-                        entry['summary'], 
-                        entry['feed_summary']
-                    )
-                    pbar.set_postfix({"stage": "summary generated"})
-                    
-                    entry['utterances_dict'] = await asyncio.to_thread(
-                        generate_assemblyai_utterances,
-                        entry['audio_file_path'], 
-                        output_dir_name=utterances_dir_name
-                    )
-                    pbar.set_postfix({"stage": "utterances generated"})
-                    
-                    entry['replaced_dict'] = await asyncio.to_thread(
-                        replace_speakers_in_assemblyai_utterances, 
-                        entry['utterances_dict'], 
-                        entry['audio_summary'],
-                        output_dir_name=utterances_replaced_dir_name
-                    )
-                    pbar.set_postfix({"stage": "utterances replaced"})
+            async def retry_stage(stage_name, stage_func, *args):
+                for attempt in range(max_retries):
+                    try:
+                        pbar.set_description(f"Processing {entry['title'][:30]}...")
+                        pbar.set_postfix({"stage": f"{stage_name} in progress"})
+                        result = await asyncio.to_thread(stage_func, *args)
+                        pbar.set_postfix({"stage": f"{stage_name} completed"})
+                        return result
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logging.warning(f"Error in {stage_name} for {entry['title']}, attempt {attempt + 1}: {str(e)}")
+                            logging.debug(f"Traceback: {traceback.format_exc()}")
+                            pbar.set_postfix({"stage": f"{stage_name} retry {attempt + 1}/{max_retries}"})
+                            await asyncio.sleep(retry_delay * (2 ** attempt))
+                        else:
+                            logging.error(f"Failed {stage_name} for {entry['title']} after {max_retries} attempts: {str(e)}")
+                            logging.debug(f"Traceback: {traceback.format_exc()}")
+                            pbar.set_postfix({"stage": f"{stage_name} failed"})
+                            raise
 
-                    if os.path.exists(entry['audio_file_path']):
-                        os.remove(entry['audio_file_path'])
-                        logging.info(f"Removed audio file: {entry['audio_file_path']}")
-                    else:
-                        logging.warning(f"Audio file not found for cleanup: {entry['audio_file_path']}")
-                    
-                    pbar.update(1)
-                    return entry
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        logging.warning(f"Error processing entry {entry['title']}, attempt {attempt + 1}: {str(e)}")
-                        logging.debug(f"Traceback: {traceback.format_exc()}")
-                        pbar.set_postfix({"stage": f"retry {attempt + 1}/{max_retries}"})
-                        await asyncio.sleep(retry_delay * (2 ** attempt))
-                    else:
-                        logging.error(f"Failed to process entry {entry['title']} after {max_retries} attempts: {str(e)}")
-                        logging.debug(f"Traceback: {traceback.format_exc()}")
-                        pbar.set_postfix({"stage": "failed"})
-                        pbar.update(1)
-            return None
+            try:
+                entry['audio_file_path'] = await retry_stage(
+                    "Audio download", download_podcast_audio,
+                    entry['url'], entry['title'], audio_dir_name
+                )
+                
+                entry['audio_summary'] = await retry_stage(
+                    "Summary generation", generate_episode_summary,
+                    entry['summary'], entry['feed_summary']
+                )
+                
+                entry['utterances_dict'] = await retry_stage(
+                    "Utterances generation", generate_assemblyai_utterances,
+                    entry['audio_file_path'], utterances_dir_name
+                )
+                
+                entry['replaced_dict'] = await retry_stage(
+                    "Utterances replacement", replace_speakers_in_assemblyai_utterances,
+                    entry['utterances_dict'], entry['audio_summary'], utterances_replaced_dir_name
+                )
+
+                if os.path.exists(entry['audio_file_path']):
+                    os.remove(entry['audio_file_path'])
+                    logging.info(f"Removed audio file: {entry['audio_file_path']}")
+                else:
+                    logging.warning(f"Audio file not found for cleanup: {entry['audio_file_path']}")
+                
+                pbar.update(1)
+                return entry
+            except Exception:
+                pbar.set_postfix({"stage": "failed"})
+                pbar.update(1)
+                return None
 
     with tqdm(total=len(feed_entries), desc="Processing episodes") as pbar:
         tasks = [process_entry(entry, pbar) for entry in feed_entries]
