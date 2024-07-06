@@ -3,7 +3,7 @@ from typing import List, Dict
 import re
 
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding, embed_dict_list, add_similarity_to_next_dict_item
-from genai_toolbox.chunk_and_embed.chunking_functions import convert_utterance_speaker_to_speakers, consolidate_similar_utterances, add_metadata_to_chunks, format_speakers_in_utterances, milliseconds_to_minutes_in_utterances
+from genai_toolbox.chunk_and_embed.chunking_functions import convert_utterance_speaker_to_speakers, consolidate_similar_utterances, add_metadata_to_chunks, format_speakers_in_utterances, milliseconds_to_minutes_in_utterances, rename_start_end_to_ms
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
 from genai_toolbox.helper_functions.datetime_helpers import convert_date_format
 
@@ -44,14 +44,15 @@ def process_entry(
     )
     formatted_utterances = format_speakers_in_utterances(titled_utterances)
     minutes_utterances = milliseconds_to_minutes_in_utterances(formatted_utterances)
+    renamed_utterances = rename_start_end_to_ms(minutes_utterances)
     
-    for utterance in minutes_utterances:
-        start = utterance['start']
+    for utterance in renamed_utterances:
+        start = utterance['start_ms']
         feed_regex = re.sub(r'[^a-zA-Z0-9\s]', '', feed_title)
         episode_regex = re.sub(r'[^a-zA-Z0-9\s]', '', episode_title)
         utterance['id'] = f"{start} {feed_regex} {episode_regex}".replace(' ', '-')
     
-    return minutes_utterances
+    return renamed_utterances
     
 def load_existing_embeddings(
     embedding_config: Dict

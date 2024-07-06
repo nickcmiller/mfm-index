@@ -5,8 +5,8 @@ from typing import Any, Callable
 from google.cloud.sql.connector import Connector
 from contextlib import contextmanager
 
-from config.gcp_sql_config import Config
-from utils.logging import setup_logging
+from ..config.gcp_sql_config import Config
+from ..utils.logging import setup_logging
 
 logger = setup_logging()
 

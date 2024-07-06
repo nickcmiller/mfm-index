@@ -2,8 +2,8 @@ CONFIG = {
     'feed_url': "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ",
     'start_date': "December 15, 2023",
     'end_date': "January 1, 2024",
-    'process_new_episodes': True,
-    'generate_embeddings': False,
+    'process_new_episodes': False,
+    'generate_embeddings': True,
     'run_query': False,
 }
 

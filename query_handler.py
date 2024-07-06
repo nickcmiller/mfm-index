@@ -27,7 +27,7 @@ def handle_query(
     template_args = {
         "title": "title",
         "text": "text",
-        "start_time": "start_time",
+        "start_mins": "start_mins"
     }
 
     response = llm_response_with_query(

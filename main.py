@@ -3,6 +3,11 @@ from podcast_processor import process_podcast_feed
 from embedding_generator import generate_embeddings
 from query_handler import handle_query
 
+from cloud_sql_gcp.config.gcp_sql_config import load_config
+from cloud_sql_gcp.databases.connection import get_db_engine
+from cloud_sql_gcp.databases.operations import ensure_pgvector_extension, write_list_of_objects_to_table, read_from_table, delete_table
+from cloud_sql_gcp.utils.logging import setup_logging
+
 def main():
     if CONFIG['process_new_episodes']:
         process_podcast_feed(CONFIG, PODCAST_CONFIG)
@@ -23,3 +28,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
