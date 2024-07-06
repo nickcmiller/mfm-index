@@ -33,16 +33,21 @@ def ensure_table_schema(
     engine: Any, 
     table_name: str, 
     data_object: Dict[str, Any],
+    unique_column: str = 'id',
     vector_dimensions: int = 3072
 ) -> None:
     try:
+        if data_object is None:
+            raise ValueError("data_object cannot be None")
+        
         inspector = inspect(engine)
         if not inspector.has_table(table_name):
             with engine.begin() as conn:
                 columns = []
                 for column, value in data_object.items():
                     if column == 'embedding':
-                        sql_type = Vector(vector_dimensions)
+                        dim = len(value) if isinstance(value, list) else vector_dimensions
+                        sql_type = Vector(dim)
                     elif isinstance(value, str):
                         sql_type = "TEXT"
                     elif isinstance(value, (int, np.integer)):
@@ -52,11 +57,24 @@ def ensure_table_schema(
                     else:
                         sql_type = "TEXT"
                     columns.append(f"{column} {sql_type}")
+                
+                columns.append(f"UNIQUE ({unique_column})")
+                
                 columns_str = ', '.join(columns)
                 conn.execute(text(f"CREATE TABLE {table_name} ({columns_str})"))
             logger.info(f"Created table {table_name}")
         else:
-            logger.info(f"Table {table_name} already exists")
+            constraints = inspector.get_unique_constraints(table_name)
+            unique_constraint_exists = any(unique_column in constraint['column_names'] for constraint in constraints)
+            
+            if not unique_constraint_exists:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD CONSTRAINT {table_name}_{unique_column}_key UNIQUE ({unique_column})"))
+                logger.info(f"Added unique constraint on '{unique_column}' column for table '{table_name}'")
+            else:
+                logger.info(f"Unique constraint on '{unique_column}' already exists for table '{table_name}'")
+            
+            logger.info(f"Table {table_name} already exists with necessary constraints")
     except Exception as e:
         logger.error(f"Error ensuring table schema: {e}", exc_info=True)
         raise
@@ -114,7 +132,7 @@ def write_list_of_objects_to_table(
     engine: Any,
     table_name: str,
     data_list: List[Dict[str, Any]],
-    unique_columns: Optional[List[str]] = None,
+    unique_column: str = 'id',
     batch_size: int = 1000
 ) -> None:
     if not data_list:
@@ -125,29 +143,27 @@ def write_list_of_objects_to_table(
 
     try:
         with engine.begin() as connection:
-            ensure_table_schema(engine, table_name, data_list[0])
+            if data_list:
+                ensure_table_schema(engine, table_name, data_list[0], unique_column)
             
             table = sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine)
             insert_stmt = insert(table)
             
-            if unique_columns:
-                update_dict = {c.name: c for c in insert_stmt.excluded if c.name not in unique_columns}
-                insert_stmt = insert_stmt.on_conflict_do_update(
-                    index_elements=unique_columns,
-                    set_=update_dict
-                )
+            update_dict = {c.name: c for c in insert_stmt.excluded if c.name != unique_column}
+            insert_stmt = insert_stmt.on_conflict_do_update(
+                index_elements=[unique_column],
+                set_=update_dict
+            )
             
             for i in range(0, len(data_list), batch_size):
                 batch = data_list[i:i+batch_size]
                 serialized_batch = []
                 for data_object in batch:
-                    # Serialize complex types, except for 'embedding'
                     serialized_data = {
                         k: serialize_complex_types(v) if k != 'embedding' else v 
                         for k, v in data_object.items()
                     }
                     
-                    # Convert embedding to list if it's a numpy array
                     if 'embedding' in serialized_data and isinstance(serialized_data['embedding'], np.ndarray):
                         serialized_data['embedding'] = serialized_data['embedding'].tolist()
                     
