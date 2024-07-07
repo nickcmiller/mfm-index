@@ -79,54 +79,6 @@ def ensure_table_schema(
         logger.error(f"Error ensuring table schema: {e}", exc_info=True)
         raise
 
-def write_to_table(
-    engine: Any,
-    table_name: str,
-    data_object: Dict[str, Any],
-    unique_columns: Optional[List[str]] = None
-) -> None:
-    logger.info(f"Writing data to table '{table_name}'")
-
-    try:
-        # Serialize complex types, except for 'embedding'
-        serialized_data = {
-            k: serialize_complex_types(v) if k != 'embedding' else v 
-            for k, v in data_object.items()
-        }
-
-        # Convert embedding to list if it's a numpy array
-        if 'embedding' in serialized_data and isinstance(serialized_data['embedding'], np.ndarray):
-            serialized_data['embedding'] = serialized_data['embedding'].tolist()
-
-        with get_db_connection(engine) as connection:
-            # Ensure the table exists with the correct schema
-            ensure_table_schema(engine, table_name, serialized_data)
-            
-            # Prepare the insert statement
-            table = sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine)
-            
-            # Create the insert statement
-            insert_stmt = insert(table).values(serialized_data)
-            
-            # If there are unique columns, create an upsert statement
-            if unique_columns:
-                update_dict = {c.name: c for c in insert_stmt.excluded if c.name not in unique_columns}
-                insert_stmt = insert_stmt.on_conflict_do_update(
-                    index_elements=unique_columns,
-                    set_=update_dict
-                )
-                operation = 'upserted'
-            else:
-                operation = 'inserted'
-            
-            # Execute the insert/upsert
-            connection.execute(insert_stmt)
-            connection.commit()
-            
-            logger.info(f"Successfully {operation} 1 row to table '{table_name}'")
-    except Exception as e:
-        logger.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
-
 @db_retry_decorator()
 def write_list_of_objects_to_table(
     engine: Any,
