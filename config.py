@@ -8,6 +8,9 @@ CONFIG = {
 }
 
 PODCAST_CONFIG = {
+    'feed_url': CONFIG['feed_url'],
+    'start_date': CONFIG['start_date'],
+    'end_date': CONFIG['end_date'],
     'audio_dir_name': "tmp_audio",
     'output_dir_name': "tmp",
     'output_file_name': "new_chunks.json",

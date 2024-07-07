@@ -10,7 +10,7 @@ from cloud_sql_gcp.utils.logging import setup_logging
 
 def main():
     if CONFIG['process_new_episodes']:
-        process_podcast_feed(CONFIG, PODCAST_CONFIG)
+        process_podcast_feed(PODCAST_CONFIG)
     
     if CONFIG['generate_embeddings']:
        response = generate_embeddings(EMBEDDING_CONFIG)
