@@ -31,6 +31,21 @@ def main(operation):
     logger.info("Main function completed")
 
 def initialize_database(config, table_name, _):
+    """
+        Initialize the database by creating a connection and ensuring the pgvector extension is installed.
+
+        This function creates a database engine with connection pooling and ensures that the pgvector
+        extension is available in the database. The pgvector extension is required for efficient
+        storage and querying of vector embeddings.
+
+        Args:
+            config (dict): A dictionary containing the database configuration parameters.
+            table_name (str): The name of the table (not used in this function, but included for consistency).
+            _ (Any): Placeholder for unused parameter (maintained for function signature consistency).
+
+        Raises:
+            Exception: If there's an error during the database initialization process.
+    """
     with get_db_engine(config) as engine:
         logger.info("Engine with connection pooling created successfully")
         ensure_pgvector_extension(engine)
@@ -52,6 +67,26 @@ def write_to_table(config, table_name, list_of_objects):
             raise
 
 def read_from_table_and_log(config, table_name, _):
+    """
+        Read data from the specified table and log the results.
+
+        This function connects to the database, reads all rows from the specified table,
+        logs information about the data read, and returns both the full rows and a version
+        of the rows with the 'embedding' field removed.
+
+        Args:
+            config (dict): A dictionary containing the database configuration parameters.
+            table_name (str): The name of the table to read from.
+            _ (Any): Placeholder for unused parameter (maintained for function signature consistency).
+
+        Returns:
+            dict: A dictionary containing two keys:
+                - 'rows': A list of all rows read from the table, including embeddings.
+                - 'non_embedding_rows': A list of all rows with the 'embedding' field removed.
+
+        Raises:
+            Exception: If there's an error during the database read operation.
+    """
     with get_db_engine(config) as engine:
         try:
             rows = read_from_table(engine, table_name)
@@ -73,6 +108,21 @@ def read_from_table_and_log(config, table_name, _):
             raise
 
 def delete_table_if_exists(config, table_name, _):
+    """
+        Delete the specified table if it exists in the database.
+
+        This function attempts to delete the given table from the database. If the table
+        doesn't exist, it will log an info message and continue without raising an error.
+
+        Args:
+            config (dict): A dictionary containing the database configuration parameters.
+            table_name (str): The name of the table to be deleted.
+            _ (Any): Placeholder for unused parameter (maintained for function signature consistency).
+
+        Raises:
+            Exception: If there's an error during the table deletion process, other than
+                    the table not existing.
+    """
     logger.info(f"Deleting table '{table_name}'")
     with get_db_engine(config) as engine:
         try:
@@ -82,6 +132,16 @@ def delete_table_if_exists(config, table_name, _):
             logger.error(f"Error deleting table '{table_name}': {e}", exc_info=True)
 
 def load_and_process_data():
+    """
+    Load and process data from a JSON file.
+
+    This function retrieves data from a JSON file named 'test_embeddings.json' in the 'tmp' directory,
+    processes it, and returns a subset of the data for further use. The function prints the types of each key-value pair in the first data object (excluding 'embedding'). The full data is loaded, but only a subset is returned to limit memory usage and processing time.
+
+    Returns:
+        list: A list containing the first 6 items from the loaded and processed data.
+
+    """
     aggregated_chunked_embeddings = retrieve_file(
         file="test_embeddings.json",
         dir_name="tmp"
