@@ -28,56 +28,71 @@ def ensure_pgvector_extension(engine: Any) -> None:
         logger.error(f"Error ensuring pgvector extension: {e}", exc_info=True)
         raise
 
-@db_retry_decorator()
 def ensure_table_schema(
     engine: Any, 
     table_name: str, 
     data_object: Dict[str, Any],
     unique_column: str = 'id',
-    vector_dimensions: int = 3072
+    vector_dimensions: int = 3072,
+    make_primary_key: bool = False
 ) -> None:
-    try:
-        if data_object is None:
-            raise ValueError("data_object cannot be None")
-        
-        inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            with engine.begin() as conn:
-                columns = []
-                for column, value in data_object.items():
-                    if column == 'embedding':
-                        dim = len(value) if isinstance(value, list) else vector_dimensions
-                        sql_type = Vector(dim)
-                    elif isinstance(value, str):
-                        sql_type = "TEXT"
-                    elif isinstance(value, (int, np.integer)):
-                        sql_type = "INTEGER"
-                    elif isinstance(value, (float, np.float64)):
-                        sql_type = "FLOAT"
-                    else:
-                        sql_type = "TEXT"
-                    columns.append(f"{column} {sql_type}")
-                
-                columns.append(f"UNIQUE ({unique_column})")
-                
-                columns_str = ', '.join(columns)
-                conn.execute(text(f"CREATE TABLE {table_name} ({columns_str})"))
-            logger.info(f"Created table {table_name}")
+    if not data_object:
+        raise ValueError("data_object cannot be None or empty")
+    
+    inspector = inspect(engine)
+    if inspector.has_table(table_name):
+        _ensure_constraints(engine, inspector, table_name, unique_column, make_primary_key)
+        return
+
+    columns = _generate_column_definitions(data_object, vector_dimensions)
+    constraint = f"PRIMARY KEY ({unique_column})" if make_primary_key else f"UNIQUE ({unique_column})"
+    columns.append(constraint)
+    
+    with engine.begin() as conn:
+        conn.execute(text(f"CREATE TABLE {table_name} ({', '.join(columns)})"))
+    
+    logger.info(f"Created table {table_name} with {constraint} on {unique_column}")
+
+def _generate_column_definitions(
+    data_object: Dict[str, Any], 
+    vector_dimensions: int
+) -> List[str]:
+    def get_sql_type(column: str, value: Any) -> str:
+        if column == 'embedding':
+            return f"Vector({len(value) if isinstance(value, list) else vector_dimensions})"
+        elif isinstance(value, str):
+            return "TEXT"
+        elif isinstance(value, int):
+            return "INTEGER"
+        elif isinstance(value, float):
+            return "FLOAT"
         else:
-            constraints = inspector.get_unique_constraints(table_name)
-            unique_constraint_exists = any(unique_column in constraint['column_names'] for constraint in constraints)
-            
-            if not unique_constraint_exists:
-                with engine.begin() as conn:
-                    conn.execute(text(f"ALTER TABLE {table_name} ADD CONSTRAINT {table_name}_{unique_column}_key UNIQUE ({unique_column})"))
-                logger.info(f"Added unique constraint on '{unique_column}' column for table '{table_name}'")
-            else:
-                logger.info(f"Unique constraint on '{unique_column}' already exists for table '{table_name}'")
-            
-            logger.info(f"Table {table_name} already exists with necessary constraints")
-    except Exception as e:
-        logger.error(f"Error ensuring table schema: {e}", exc_info=True)
-        raise
+            return "TEXT"
+
+    return [
+        f"{column} {get_sql_type(column, value)}"
+        for column, value in data_object.items()
+    ]
+
+def _ensure_constraints(engine: Any, 
+    inspector: Any, 
+    table_name: str, 
+    unique_column: str, 
+    make_primary_key: bool
+) -> None:
+    pk_constraint = inspector.get_pk_constraint(table_name)
+    is_primary_key = pk_constraint and unique_column in pk_constraint['constrained_columns']
+    
+    if make_primary_key and not is_primary_key:
+        logger.warning(f"Cannot modify existing table '{table_name}' to make '{unique_column}' the primary key.")
+    elif not make_primary_key and not is_primary_key:
+        constraints = inspector.get_unique_constraints(table_name)
+        if not any(unique_column in constraint['column_names'] for constraint in constraints):
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table_name} ADD CONSTRAINT {table_name}_{unique_column}_key UNIQUE ({unique_column})"))
+            logger.info(f"Added unique constraint on '{unique_column}' column for existing table '{table_name}'")
+    
+    logger.info(f"Table {table_name} already exists. Ensured necessary constraints.")
 
 @db_retry_decorator()
 def write_list_of_objects_to_table(
@@ -85,7 +100,8 @@ def write_list_of_objects_to_table(
     table_name: str,
     data_list: List[Dict[str, Any]],
     unique_column: str = 'id',
-    batch_size: int = 1000
+    batch_size: int = 1000,
+    make_primary_key: bool = False
 ) -> None:
     if not data_list:
         logger.info(f"No data to write to table '{table_name}'")
@@ -96,7 +112,7 @@ def write_list_of_objects_to_table(
     try:
         with engine.begin() as connection:
             if data_list:
-                ensure_table_schema(engine, table_name, data_list[0], unique_column)
+                ensure_table_schema(engine, table_name, data_list[0], unique_column, make_primary_key=make_primary_key)
             
             table = sqlalchemy.Table(table_name, sqlalchemy.MetaData(), autoload_with=engine)
             insert_stmt = insert(table)
@@ -149,7 +165,6 @@ def read_from_table(
             result = connection.execute(query)
             rows = [row._asdict() for row in result]
 
-        # Deserialize complex types for all columns except 'embedding'
         for row in rows:
             for key, value in row.items():
                 if key != 'embedding':
