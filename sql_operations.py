@@ -66,43 +66,51 @@ def write_to_table(config, table_name, list_of_objects):
             logger.error(f"Failed to write to table: {e}", exc_info=True)
             raise
 
-def read_from_table_and_log(config, table_name, _):
+def read_from_table_and_log(
+    config, 
+    table_name,
+    _, 
+    keep_embeddings=False
+):
     """
-        Read data from the specified table and log the results.
+    Read data from the specified table and log the results.
 
-        This function connects to the database, reads all rows from the specified table,
-        logs information about the data read, and returns both the full rows and a version
-        of the rows with the 'embedding' field removed.
+    This function connects to the database, reads all rows from the specified table,
+    logs information about the data read, and returns the rows based on the keep_embeddings flag.
 
-        Args:
-            config (dict): A dictionary containing the database configuration parameters.
-            table_name (str): The name of the table to read from.
-            _ (Any): Placeholder for unused parameter (maintained for function signature consistency).
+    Args:
+        config (dict): A dictionary containing the database configuration parameters.
+        table_name (str): The name of the table to read from.
+        _ (Any): Placeholder for unused parameter (maintained for function signature consistency).
+        keep_embeddings (bool): Flag to determine whether to keep embeddings in the returned data.
 
-        Returns:
-            dict: A dictionary containing two keys:
-                - 'rows': A list of all rows read from the table, including embeddings.
-                - 'non_embedding_rows': A list of all rows with the 'embedding' field removed.
+    Returns:
+        dict: A dictionary containing one or two keys:
+            - 'rows': A list of all rows read from the table, including embeddings if keep_embeddings is True.
+            - 'non_embedding_rows': A list of all rows with the 'embedding' field removed (only if keep_embeddings is False).
 
-        Raises:
-            Exception: If there's an error during the database read operation.
+    Raises:
+        Exception: If there's an error during the database read operation.
     """
     with get_db_engine(config) as engine:
         try:
-            rows = read_from_table(engine, table_name)
+            rows = read_from_table(engine, table_name, include_embedding=keep_embeddings)
             logger.info(f"Read {len(rows)} rows from table '{table_name}'")
             logger.info(f"Available keys in the first row: {rows[0].keys()}")
 
-            non_embedding_rows = []
-            for row in rows:
-                filtered_row = {k: v for k, v in row.items() if k != 'embedding'}
-                non_embedding_rows.append(filtered_row)
-            logger.info(f"Row non-embedding values: {json.dumps(non_embedding_rows, indent=4)}")
+            result = {'rows': rows}
 
-            return {
-                'rows': rows,
-                'non_embedding_rows': non_embedding_rows
-            }
+            if not keep_embeddings:
+                non_embedding_rows = [{k: v for k, v in row.items() if k != 'embedding'} for row in rows]
+                logger.info(f"Row non-embedding values: {json.dumps(non_embedding_rows[:5], indent=4)}")
+                result['non_embedding_rows'] = non_embedding_rows
+            else:
+                for row in rows:
+                    
+                    logger.info(f"Embedding type: {type(row['embedding'])}")
+                    logger.info(f"Embedding sample: {row['embedding'][:10]}")
+
+            return result
         except Exception as e:
             logger.error(f"Failed to read from table: {e}", exc_info=True)
             raise

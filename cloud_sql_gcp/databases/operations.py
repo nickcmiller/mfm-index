@@ -151,7 +151,8 @@ def read_from_table(
     engine: Any, 
     table_name: str,
     limit: int = None,
-    where_clause: str = None
+    where_clause: str = None,
+    include_embedding: bool = False
 ) -> List[Dict[str, Any]]:
     logger.info(f"Reading data from table '{table_name}'")
     try:
@@ -165,13 +166,16 @@ def read_from_table(
             result = connection.execute(query)
             rows = [row._asdict() for row in result]
 
+        processed_rows = []
         for row in rows:
+            processed_row = {}
             for key, value in row.items():
-                if key != 'embedding':
-                    row[key] = deserialize_complex_types(value)
+                if key != 'embedding' or include_embedding:
+                    processed_row[key] = deserialize_complex_types(value)
+            processed_rows.append(processed_row)
 
-        logger.info(f"Successfully read {len(rows)} rows from table '{table_name}'")
-        return rows
+        logger.info(f"Successfully read {len(processed_rows)} rows from table '{table_name}'")
+        return processed_rows
     except Exception as e:
         logger.error(f"Error reading from table '{table_name}': {e}", exc_info=True)
         raise
