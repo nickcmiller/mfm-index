@@ -6,7 +6,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from pgvector.sqlalchemy import Vector
 import sqlalchemy
-from sqlalchemy import inspect, text, select
+from sqlalchemy import inspect, text, select, func
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.dialects.postgresql import insert
 
@@ -178,6 +178,57 @@ def read_from_table(
         return processed_rows
     except Exception as e:
         logger.error(f"Error reading from table '{table_name}': {e}", exc_info=True)
+        raise
+
+def read_similar_rows(
+    engine: Any,
+    table_name: str,
+    query_embedding: List[float],
+    limit: int = 5,
+    where_clause: str = None,
+    include_embedding: bool = False,
+    include_text: bool = True  # Add parameter to control inclusion of the 'text' column
+) -> List[Dict[str, Any]]:
+    logger.info(f"Reading similar rows from table '{table_name}'")
+    try:
+        with engine.connect() as connection:
+            # Construct the base query
+            query = "SELECT id, 1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity"
+            if include_embedding:
+                query += ", embedding"
+            if include_text:
+                query += ", text"  # Include the 'text' column in the query
+            
+            query += f" FROM {table_name}"
+            
+            if where_clause:
+                query += f" WHERE {where_clause}"
+            
+            query += " ORDER BY similarity DESC LIMIT :limit"
+            
+            # Execute the query
+            result = connection.execute(
+                text(query),
+                {"query_embedding": json.dumps(query_embedding), "limit": limit}
+            )
+            
+            # Fetch and process the results
+            rows = result.fetchall()
+            results = []
+            for row in rows:
+                item = {
+                    "id": row.id,
+                    "similarity": row.similarity
+                }
+                if include_embedding:
+                    item["embedding"] = row.embedding
+                if include_text:
+                    item["text"] = row.text  # Ensure 'text' is added to the result dictionary
+                results.append(item)
+            
+            return results
+    except Exception as e:
+        logger.error(f"Error reading similar rows: {str(e)}")
         raise
 
 @db_retry_decorator()

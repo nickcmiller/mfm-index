@@ -1,14 +1,15 @@
 import json
+import numpy as np
 
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
 from cloud_sql_gcp.config.gcp_sql_config import load_config
 from cloud_sql_gcp.databases.connection import get_db_engine
-from cloud_sql_gcp.databases.operations import ensure_pgvector_extension, write_list_of_objects_to_table, read_from_table, delete_table
+from cloud_sql_gcp.databases.operations import ensure_pgvector_extension, write_list_of_objects_to_table, read_from_table, read_similar_rows, delete_table
 from cloud_sql_gcp.utils.logging import setup_logging
 
 logger = setup_logging()
 
-def main(operation):
+def main(operation, query_embedding=None):
     logger.info(f"Starting main function with operation: {operation}")
     config = load_config()
     
@@ -16,7 +17,8 @@ def main(operation):
         'init': initialize_database,
         'read': read_from_table_and_log,
         'write': write_to_table,
-        'delete': delete_table_if_exists
+        'delete': delete_table_if_exists,
+        'similarity': cosine_similarity_search
     }
     
     if operation not in operations:
@@ -24,13 +26,27 @@ def main(operation):
         return
     
     try:
-        operations[operation](config, table_name, list_of_objects)
+        if operation == 'similarity':
+            if query_embedding is None:
+                # Generate a random query embedding if none is provided
+                query_embedding = np.random.rand(3072).tolist()  # Assuming 3072-dimensional embeddings
+                logger.info("Using a random query embedding for similarity search")
+            result = operations[operation](config, table_name, query_embedding)
+        else:
+            result = operations[operation](config, table_name, list_of_objects)
+        
+        if result:
+            logger.info(f"Operation result: {json.dumps(result, indent=4)}")
     except Exception as e:
         logger.error(f"An error occurred in main: {e}", exc_info=True)
     
     logger.info("Main function completed")
 
-def initialize_database(config, table_name, _):
+def initialize_database(
+    config, 
+    table_name, 
+    _
+):
     """
         Initialize the database by creating a connection and ensuring the pgvector extension is installed.
 
@@ -51,7 +67,11 @@ def initialize_database(config, table_name, _):
         ensure_pgvector_extension(engine)
     logger.info("Database initialized successfully")
 
-def write_to_table(config, table_name, list_of_objects):
+def write_to_table(
+    config, 
+    table_name, 
+    list_of_objects
+):
     with get_db_engine(config) as engine:
         try:
             write_list_of_objects_to_table(
@@ -115,7 +135,50 @@ def read_from_table_and_log(
             logger.error(f"Failed to read from table: {e}", exc_info=True)
             raise
 
-def delete_table_if_exists(config, table_name, _):
+def cosine_similarity_search(
+    config, 
+    table_name, 
+    query_embedding, 
+    limit=5
+):
+    """
+    Perform a cosine similarity search on the specified table.
+
+    This function connects to the database and performs a cosine similarity search
+    using the provided query embedding. It returns the most similar rows based on
+    the cosine similarity between the query embedding and the stored embeddings.
+
+    Args:
+        config (dict): A dictionary containing the database configuration parameters.
+        table_name (str): The name of the table to search in.
+        query_embedding (list): The query embedding to compare against.
+        limit (int): The maximum number of similar rows to return.
+
+    Returns:
+        list: A list of dictionaries containing the most similar rows and their similarity scores.
+
+    Raises:
+        Exception: If there's an error during the database search operation.
+    """
+    with get_db_engine(config) as engine:
+        try:
+            similar_rows = read_similar_rows(engine, table_name, query_embedding, limit=limit)
+            logger.info(f"Found {len(similar_rows)} similar rows in table '{table_name}'")
+            
+            for row in similar_rows:
+                logger.info(f"Similarity: {row['similarity']}, ID: {row['id']}")
+                logger.info(f"Text: {row['text'][:100]}...")  # Log first 100 characters of text
+            
+            return similar_rows
+        except Exception as e:
+            logger.error(f"Failed to perform cosine similarity search: {e}", exc_info=True)
+            raise
+
+def delete_table_if_exists(
+    config, 
+    table_name,
+    _
+):
     """
         Delete the specified table if it exists in the database.
 
@@ -159,12 +222,19 @@ def load_and_process_data():
     filtered_data_object = {key: value for key, value in data_object.items() if key != 'embedding'}
     for key, value in filtered_data_object.items():
         print(f"{key}: {type(value)}")
-    return aggregated_chunked_embeddings[:6]
+    return aggregated_chunked_embeddings
 
 if __name__ == "__main__":
     import json 
     import sys
     
+    from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding
+
+    embed_query = create_openai_embedding(
+        text="What's the latest with Adobe and Figma?",
+        model_choice="text-embedding-3-large"
+    )
+
     table_name = 'vector_table'
     list_of_objects = load_and_process_data()
     
@@ -173,4 +243,5 @@ if __name__ == "__main__":
     else:
         operation = 'init'  # default operation
     
-    main(operation)
+
+    main(operation, embed_query)
