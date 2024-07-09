@@ -54,7 +54,7 @@ def process_entry(
     
     return renamed_utterances
     
-def load_existing_embeddings(
+def load_existing_dicts(
     embedding_config: Dict
 ) -> List[Dict]:
     try:
@@ -67,28 +67,27 @@ def load_existing_embeddings(
         return []
 
 def generate_embeddings(
-    embedding_config: Dict
+    embedding_config: Dict,
+    include_existing: bool = False
 ) -> List[Dict]:
     feed_dict = retrieve_file(
         file=embedding_config['input_podcast_file'],
         dir_name=embedding_config['input_podcast_dir']
     )
 
-    aggregated_chunked_embeddings = [
+    chunked_dicts = [
         embedding for entry in feed_dict
         for embedding in process_entry(entry)
     ]
     
-    all_aggregated_chunked_embeddings = load_existing_embeddings(embedding_config)
-    if all_aggregated_chunked_embeddings:
-        all_aggregated_chunked_embeddings.extend(aggregated_chunked_embeddings)
-    else:
-        all_aggregated_chunked_embeddings = aggregated_chunked_embeddings
+    if include_existing:
+        existing_chunked_dicts = load_existing_dicts(embedding_config)
+        chunked_dicts = existing_chunked_dicts + chunked_dicts
     
     write_to_file(
-        content=all_aggregated_chunked_embeddings,
+        content=chunked_dicts,
         file=embedding_config['output_file_name'],
         output_dir_name=embedding_config['output_dir_name']
     )
 
-    return all_aggregated_chunked_embeddings
+    return chunked_dicts

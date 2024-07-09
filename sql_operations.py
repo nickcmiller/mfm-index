@@ -1,6 +1,6 @@
 import json
 import numpy as np
-from typing import List, Dict
+from typing import List, Dict, Any
 
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
 from cloud_sql_gcp.config.gcp_sql_config import load_config
@@ -9,11 +9,12 @@ from cloud_sql_gcp.databases.operations import ensure_pgvector_extension, write_
 from cloud_sql_gcp.utils.logging import setup_logging
 
 logger = setup_logging()
+config = load_config()
 
 def initialize_database(
-    config, 
     table_name, 
-    _
+    _,
+    config=config, 
 ):
     """
         Initialize the database by creating a connection and ensuring the pgvector extension is installed.
@@ -36,9 +37,9 @@ def initialize_database(
     logger.info("Database initialized successfully")
 
 def write_to_table(
-    config, 
     table_name, 
-    list_of_objects
+    list_of_objects,
+    config=config
 ) -> None:
     with get_db_engine(config) as engine:
         try:
@@ -55,9 +56,9 @@ def write_to_table(
             raise
 
 def read_from_table_and_log(
-    config, 
     table_name,
     _, 
+    config=config,
     keep_embeddings=False
 ) -> Dict[str, Any]:
     """
@@ -104,10 +105,10 @@ def read_from_table_and_log(
             raise
 
 def cosine_similarity_search(
-    config, 
     table_name, 
     query_embedding, 
-    limit=5
+    limit=5,
+    config=config
 ) -> List[Dict[str, Any]]:
     """
     Perform a cosine similarity search on the specified table.
@@ -143,9 +144,9 @@ def cosine_similarity_search(
             raise
 
 def delete_table_if_exists(
-    config, 
     table_name,
-    _
+    _,
+    config=config
 ) -> None:
     """
         Delete the specified table if it exists in the database.
@@ -217,9 +218,10 @@ def main(
                 # Generate a random query embedding if none is provided
                 query_embedding = np.random.rand(3072).tolist()  # Assuming 3072-dimensional embeddings
                 logger.info("Using a random query embedding for similarity search")
-            result = operations[operation](config, table_name, query_embedding)
+            result = operations[operation](table_name, query_embedding, config=config)
+
         else:
-            result = operations[operation](config, table_name, list_of_objects)
+            result = operations[operation](table_name, None, config=config)
         
         if result:
             logger.info(f"Operation result: {json.dumps(result, indent=4)}")

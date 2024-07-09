@@ -36,26 +36,26 @@ def handle_query(
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        llm_function=groq_text_response,
-        llm_model_choice="llama3-70b",
+        # llm_function=groq_text_response,
+        # llm_model_choice="llama3-70b",
     )
 
     return response
 
 if __name__ == "__main__":
-    from sql_operations import cosine_similarity_search
+    from sql_operations import cosine_similarity_search, read_from_table_and_log
     from cloud_sql_gcp.config.gcp_sql_config import load_config
     from genai_toolbox.helper_functions.string_helpers import write_to_file
     
     table_name = 'vector_table'
+    question = "What is the relevance of encryption in regulation?"
     config = load_config()
     query_embedding = create_openai_embedding(
-        text="What's the latest with Adobe and Figma?",
+        text=question,
         model_choice="text-embedding-3-large"
     )
 
     similar_chunks = cosine_similarity_search(
-        config=config,
         table_name=table_name,
         query_embedding=query_embedding,
         limit=5
@@ -74,9 +74,10 @@ if __name__ == "__main__":
     )
     for chunk in similar_chunks:
         print(chunk['similarity'])
+        print(chunk['title'])
 
     response = handle_query(
-        question="What were the major trends of 2023?",
+        question=question,
         similar_chunks_file=similar_chunks_file,
         dir_name="tmp"
     )
