@@ -1,5 +1,6 @@
 import json
 import numpy as np
+from typing import List, Dict
 
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
 from cloud_sql_gcp.config.gcp_sql_config import load_config
@@ -8,39 +9,6 @@ from cloud_sql_gcp.databases.operations import ensure_pgvector_extension, write_
 from cloud_sql_gcp.utils.logging import setup_logging
 
 logger = setup_logging()
-
-def main(operation, query_embedding=None):
-    logger.info(f"Starting main function with operation: {operation}")
-    config = load_config()
-    
-    operations = {
-        'init': initialize_database,
-        'read': read_from_table_and_log,
-        'write': write_to_table,
-        'delete': delete_table_if_exists,
-        'similarity': cosine_similarity_search
-    }
-    
-    if operation not in operations:
-        logger.error(f"Invalid operation: {operation}")
-        return
-    
-    try:
-        if operation == 'similarity':
-            if query_embedding is None:
-                # Generate a random query embedding if none is provided
-                query_embedding = np.random.rand(3072).tolist()  # Assuming 3072-dimensional embeddings
-                logger.info("Using a random query embedding for similarity search")
-            result = operations[operation](config, table_name, query_embedding)
-        else:
-            result = operations[operation](config, table_name, list_of_objects)
-        
-        if result:
-            logger.info(f"Operation result: {json.dumps(result, indent=4)}")
-    except Exception as e:
-        logger.error(f"An error occurred in main: {e}", exc_info=True)
-    
-    logger.info("Main function completed")
 
 def initialize_database(
     config, 
@@ -71,7 +39,7 @@ def write_to_table(
     config, 
     table_name, 
     list_of_objects
-):
+) -> None:
     with get_db_engine(config) as engine:
         try:
             write_list_of_objects_to_table(
@@ -91,7 +59,7 @@ def read_from_table_and_log(
     table_name,
     _, 
     keep_embeddings=False
-):
+) -> Dict[str, Any]:
     """
     Read data from the specified table and log the results.
 
@@ -140,7 +108,7 @@ def cosine_similarity_search(
     table_name, 
     query_embedding, 
     limit=5
-):
+) -> List[Dict[str, Any]]:
     """
     Perform a cosine similarity search on the specified table.
 
@@ -167,7 +135,7 @@ def cosine_similarity_search(
             
             for row in similar_rows:
                 logger.info(f"Similarity: {row['similarity']}, ID: {row['id']}")
-                logger.info(f"Text: {row['text'][:100]}...")  # Log first 100 characters of text
+                logger.info(f"Text: {row['text'][:100]}...")
             
             return similar_rows
         except Exception as e:
@@ -178,7 +146,7 @@ def delete_table_if_exists(
     config, 
     table_name,
     _
-):
+) -> None:
     """
         Delete the specified table if it exists in the database.
 
@@ -202,7 +170,7 @@ def delete_table_if_exists(
         except Exception as e:
             logger.error(f"Error deleting table '{table_name}': {e}", exc_info=True)
 
-def load_and_process_data():
+def load_and_process_data() -> List[Dict[str, Any]]:
     """
     Load and process data from a JSON file.
 
@@ -223,6 +191,42 @@ def load_and_process_data():
     for key, value in filtered_data_object.items():
         print(f"{key}: {type(value)}")
     return aggregated_chunked_embeddings
+
+def main(
+    operation, 
+    query_embedding=None
+) -> None:
+    logger.info(f"Starting main function with operation: {operation}")
+    config = load_config()
+    
+    operations = {
+        'init': initialize_database,
+        'read': read_from_table_and_log,
+        'write': write_to_table,
+        'delete': delete_table_if_exists,
+        'similarity': cosine_similarity_search
+    }
+    
+    if operation not in operations:
+        logger.error(f"Invalid operation: {operation}")
+        return
+    
+    try:
+        if operation == 'similarity':
+            if query_embedding is None:
+                # Generate a random query embedding if none is provided
+                query_embedding = np.random.rand(3072).tolist()  # Assuming 3072-dimensional embeddings
+                logger.info("Using a random query embedding for similarity search")
+            result = operations[operation](config, table_name, query_embedding)
+        else:
+            result = operations[operation](config, table_name, list_of_objects)
+        
+        if result:
+            logger.info(f"Operation result: {json.dumps(result, indent=4)}")
+    except Exception as e:
+        logger.error(f"An error occurred in main: {e}", exc_info=True)
+    
+    logger.info("Main function completed")
 
 if __name__ == "__main__":
     import json 

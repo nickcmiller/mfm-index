@@ -187,17 +187,18 @@ def read_similar_rows(
     limit: int = 5,
     where_clause: str = None,
     include_embedding: bool = False,
-    include_text: bool = True  # Add parameter to control inclusion of the 'text' column
+    included_columns: List[str] = ["id", "text", "title", "start_mins"]
 ) -> List[Dict[str, Any]]:
     logger.info(f"Reading similar rows from table '{table_name}'")
     try:
         with engine.connect() as connection:
             # Construct the base query
             query = "SELECT id, 1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity"
+            for column in included_columns:
+                query += f", {column}"
+
             if include_embedding:
                 query += ", embedding"
-            if include_text:
-                query += ", text"  # Include the 'text' column in the query
             
             query += f" FROM {table_name}"
             
@@ -216,14 +217,10 @@ def read_similar_rows(
             rows = result.fetchall()
             results = []
             for row in rows:
-                item = {
-                    "id": row.id,
-                    "similarity": row.similarity
-                }
-                if include_embedding:
-                    item["embedding"] = row.embedding
-                if include_text:
-                    item["text"] = row.text  # Ensure 'text' is added to the result dictionary
+                item = dict(row._mapping)  # Convert Row object to dictionary
+                item['similarity'] = item.pop('similarity')  # Move similarity to the end
+                if not include_embedding:
+                    item.pop('embedding', None)
                 results.append(item)
             
             return results

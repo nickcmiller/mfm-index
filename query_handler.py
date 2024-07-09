@@ -5,25 +5,25 @@ from genai_toolbox.helper_functions.string_helpers import retrieve_file
 import json
 
 def handle_query(
-    query_config: dict
+    question: str,
+    similar_chunks_file: str,
+    dir_name: str
 ) -> dict:
-    question = query_config['question']
-    aggregated_chunked_embeddings = query_config['input_file_name']
-    dir_name = query_config['input_dir_name']
 
-    aggregated_chunked_embeddings = retrieve_file(
-        file=aggregated_chunked_embeddings, 
+    similar_chunks = retrieve_file(
+        file=similar_chunks_file, 
         dir_name=dir_name
     )
 
     llm_system_prompt = """
-    Use numbered references to cite the sources that are given to you. 
+    Use numbered references to cite the sources that are given to you.
+    Use the numbers to identify sources at the bottom of answer with their titles.
     Each timestamp is its own reference (e.g. [1] Title at 01:00). 
-    Do not refer to the source material in your text, only in your number citations
-    Give a detailed answer.
+    Do not refer to the source material in your text, only in your number citations.
+    Give a thorough, detailed, and comprehensive answer.
     """
 
-    source_template = "Title: {title} at {start_time}\nText: {text}"
+    source_template = "Title: {title} at {start_mins}\nText: {text}"
     template_args = {
         "title": "title",
         "text": "text",
@@ -31,16 +31,57 @@ def handle_query(
     }
 
     response = llm_response_with_query(
+        similar_chunks=similar_chunks,
         question=question,
-        chunks_with_embeddings=aggregated_chunked_embeddings,
-        embedding_function=create_openai_embedding,
-        query_model="text-embedding-3-large",
-        threshold=0.35,
-        max_query_chunks=5,
-        llm_function=openai_text_response,
-        llm_model_choice="4o",
+        llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
+        llm_function=groq_text_response,
+        llm_model_choice="llama3-70b",
     )
 
     return response
+
+if __name__ == "__main__":
+    from sql_operations import cosine_similarity_search
+    from cloud_sql_gcp.config.gcp_sql_config import load_config
+    from genai_toolbox.helper_functions.string_helpers import write_to_file
+    
+    table_name = 'vector_table'
+    config = load_config()
+    query_embedding = create_openai_embedding(
+        text="What's the latest with Adobe and Figma?",
+        model_choice="text-embedding-3-large"
+    )
+
+    similar_chunks = cosine_similarity_search(
+        config=config,
+        table_name=table_name,
+        query_embedding=query_embedding,
+        limit=5
+    )
+
+    similar_chunks_file = "similar_chunks.json"
+    write_to_file(
+        file=similar_chunks_file,
+        output_dir_name="tmp",
+        content=similar_chunks
+    )
+
+    similar_chunks = retrieve_file(
+        file=similar_chunks_file,
+        dir_name="tmp"
+    )
+    for chunk in similar_chunks:
+        print(chunk['similarity'])
+
+    response = handle_query(
+        question="What were the major trends of 2023?",
+        similar_chunks_file=similar_chunks_file,
+        dir_name="tmp"
+    )
+
+    print(response['llm_response'])
+
+
+
