@@ -18,6 +18,20 @@ log "SQL_INSTANCE: ${SQL_INSTANCE}"
 log "Active account:"
 gcloud config get-value account
 
+# Check if SQL instance exists
+if ! gcloud sql instances describe ${SQL_INSTANCE} &>/dev/null; then
+    log "SQL instance ${SQL_INSTANCE} does not exist."
+    read -p "Do you want to create the SQL instance? (y/n): " create_instance
+    if [[ ${create_instance,,} == "y" ]]; then
+        log "Creating SQL instance ${SQL_INSTANCE}..."
+        gcloud sql instances create ${SQL_INSTANCE} --region=us-central1
+        log "SQL instance created successfully."
+    else
+        log "SQL instance creation skipped. Exiting script."
+        exit 1
+    fi
+fi
+
 # List available backups
 log "Available backups:"
 gsutil ls gs://${SQL_INSTANCE}_backup
