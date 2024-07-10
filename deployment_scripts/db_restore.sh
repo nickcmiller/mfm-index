@@ -18,19 +18,18 @@ log "SQL_INSTANCE: ${SQL_INSTANCE}"
 log "Active account:"
 gcloud config get-value account
 
-# Check if SQL instance exists
-if ! gcloud sql instances describe ${SQL_INSTANCE} &>/dev/null; then
-    log "SQL instance ${SQL_INSTANCE} does not exist."
-    read -p "Do you want to create the SQL instance? (y/n): " create_instance
-    if [[ ${create_instance,,} == "y" ]]; then
-        log "Creating SQL instance ${SQL_INSTANCE}..."
-        gcloud sql instances create ${SQL_INSTANCE} --region=us-central1
-        log "SQL instance created successfully."
-    else
-        log "SQL instance creation skipped. Exiting script."
-        exit 1
-    fi
-fi
+# Initialize Terraform
+log "Initializing Terraform..."
+terraform init
+
+# Show current Terraform state
+log "Current Terraform state:"
+terraform show
+
+# List Terraform-managed resources
+log "Terraform-managed resources:"
+terraform state list
+
 
 # List available backups
 log "Available backups:"
@@ -38,6 +37,32 @@ gsutil ls gs://${SQL_INSTANCE}_backup
 
 # Prompt user to select a backup file
 read -p "Enter the full path of the backup file to restore: " BACKUP_FILE
+
+# Apply Terraform configuration
+log "Applying Terraform configuration..."
+terraform apply -var "ADMIN_PASSWORD=${SQL_PASSWORD}" \
+                -var "DEFAULT_PROJECT=${PROJECT_ID}" \
+                -var "DEFAULT_REGION=${DEFAULT_REGION}" \
+                -var "DEFAULT_ZONE=${DEFAULT_ZONE}" \
+                -var "SQL_INSTANCE=${SQL_INSTANCE}" \
+                -var "DATABASE_NAME=${SQL_DATABASE}" \
+                -auto-approve
+
+
+# Get the SQL service account
+SQL_SERVICE_ACCOUNT=$(gcloud sql instances describe ${SQL_INSTANCE} --format="value(serviceAccountEmailAddress)")
+log "SQL Service Account: ${SQL_SERVICE_ACCOUNT}"
+
+# Set IAM permissions for the service account on the bucket
+log "Setting IAM permissions for ${SQL_SERVICE_ACCOUNT} on gs://${SQL_INSTANCE}_backup"
+gsutil iam ch serviceAccount:${SQL_SERVICE_ACCOUNT}:objectAdmin gs://${SQL_INSTANCE}_backup
+
+# Verify service account permissions
+log "Verifying service account permissions"
+gcloud projects get-iam-policy ${PROJECT_ID} \
+    --flatten="bindings[].members" \
+    --format='table(bindings.role)' \
+    --filter="bindings.members:${SQL_SERVICE_ACCOUNT}"
 
 # Verify the backup file exists
 if ! gsutil -q stat "${BACKUP_FILE}"; then
@@ -48,7 +73,7 @@ fi
 # Perform the SQL import
 log "Starting SQL import..."
 if ! gcloud sql import sql ${SQL_INSTANCE} ${BACKUP_FILE} \
-    --database=${SQL_INSTANCE} \
+    --database=${SQL_DATABASE} \
     --quiet; then
     log "SQL import failed. Checking SQL instance details..."
     gcloud sql instances describe ${SQL_INSTANCE} \
