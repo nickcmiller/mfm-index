@@ -4,6 +4,8 @@
 *.txt
 !requirements.txt
 
+*.tfvars
+
 .DS_Store
 __pycache__/
 temp/
