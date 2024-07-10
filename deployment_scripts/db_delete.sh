@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Source environment variables
-source .env
+source ../.env
 
 # Function to log messages
 log() {
