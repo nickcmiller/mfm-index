@@ -49,10 +49,14 @@ log "${DATABASES}"
 # Prompt user to select a database
 read -p "Enter the name of the database to backup: " DATABASE_NAME
 
+# Prompt user for backup name suffix
+read -p "Enter a suffix for the backup name (default: '_backup'): " BACKUP_SUFFIX
+BACKUP_SUFFIX=${BACKUP_SUFFIX:-"_backup"}
+
 # Perform the SQL export
 log "Starting SQL export..."
 if ! gcloud sql export sql ${SQL_INSTANCE} \
-    gs://${SQL_INSTANCE}_backup/${SQL_INSTANCE}_${DATABASE_NAME}_$(date +'%Y%m%d_%H%M%S').gz \
+    gs://${SQL_INSTANCE}_backup/${DATABASE_NAME}${BACKUP_SUFFIX}_$(date +'%Y%m%d_%H%M%S').gz \
     --database=${DATABASE_NAME} \
     --offload; then
     log "SQL export failed. Checking SQL instance details..."

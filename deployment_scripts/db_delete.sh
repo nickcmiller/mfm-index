@@ -21,6 +21,14 @@ gcloud config get-value account
 log "Initializing Terraform..."
 terraform init
 
+# Prompt user to confirm backup before deletion
+read -p "Do you want to perform a backup before deletion? (y/N): " BACKUP_CONFIRM
+if [[ ${BACKUP_CONFIRM,,} == "y" ]]; then
+    log "Performing backup..."
+    ./db_backup.sh
+    log "Backup completed."
+fi
+
 # Prompt user to confirm deletion
 log "Current Terraform state:"
 terraform state list

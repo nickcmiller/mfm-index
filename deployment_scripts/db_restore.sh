@@ -30,10 +30,23 @@ terraform show
 log "Terraform-managed resources:"
 terraform state list
 
-
-# List available backups
+# List available backups with creation dates
 log "Available backups:"
-gsutil ls gs://${SQL_INSTANCE}_backup
+PROCESSED_OUTPUT=$(gsutil ls -l gs://${SQL_INSTANCE}_backup | awk '{
+    if ($1 ~ /^[0-9]+$/) {
+        size = $1
+        date = $2
+        file = $3
+        for (i=4; i<=NF; i++) file = file " " $i
+        printf "\nDate: %s\nSize: %.2f MB\n%s\n", date, size/1024/1024, file
+    }
+}')
+
+if [ -z "$PROCESSED_OUTPUT" ]; then
+    log "No backups found or failed to process backups."
+else
+    echo -e "$PROCESSED_OUTPUT \n"
+fi
 
 # Prompt user to select a backup file
 read -p "Enter the full path of the backup file to restore: " BACKUP_FILE
