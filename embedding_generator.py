@@ -1,13 +1,20 @@
 import logging
 from typing import List, Dict
 import re
+import asyncio
+from asyncio import Semaphore
+from tqdm.asyncio import tqdm
 
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding, embed_dict_list, add_similarity_to_next_dict_item
-from genai_toolbox.chunk_and_embed.chunking_functions import convert_utterance_speaker_to_speakers, consolidate_similar_utterances, add_metadata_to_chunks, format_speakers_in_utterances, milliseconds_to_minutes_in_utterances, rename_start_end_to_ms
+from genai_toolbox.chunk_and_embed.chunking_functions import (
+    convert_utterance_speaker_to_speakers, consolidate_similar_utterances,
+    add_metadata_to_chunks, format_speakers_in_utterances,
+    milliseconds_to_minutes_in_utterances, rename_start_end_to_ms
+)
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
 from genai_toolbox.helper_functions.datetime_helpers import convert_date_format
 
-def process_entry(
+async def process_entry(
     entry: Dict,
     consolidation_threshold: float = 0.35
 ) -> List[Dict]:
@@ -17,7 +24,8 @@ def process_entry(
     utterances = entry['replaced_dict']['transcribed_utterances']
     
     speakermod_utterances = convert_utterance_speaker_to_speakers(utterances)
-    embedded_utterances = embed_dict_list(
+    embedded_utterances = await asyncio.to_thread(
+        embed_dict_list,
         embedding_function=create_openai_embedding,
         chunk_dicts=speakermod_utterances, 
         key_to_embed="text",
@@ -29,7 +37,8 @@ def process_entry(
         for utterance in similar_utterances
     ]
     consolidated_similar_utterances = consolidate_similar_utterances(filtered_utterances, similarity_threshold=consolidation_threshold)
-    consolidated_embeddings = embed_dict_list(
+    consolidated_embeddings = await asyncio.to_thread(
+        embed_dict_list,
         embedding_function=create_openai_embedding,
         chunk_dicts=consolidated_similar_utterances, 
         key_to_embed="text",
@@ -53,7 +62,7 @@ def process_entry(
         utterance['id'] = f"{start} {feed_regex} {episode_regex}".replace(' ', '-')
     
     return renamed_utterances
-    
+
 def load_existing_dicts(
     embedding_config: Dict
 ) -> List[Dict]:
@@ -66,19 +75,30 @@ def load_existing_dicts(
         logging.info("No existing aggregated chunked embeddings found. Creating new file.")
         return []
 
-def generate_embeddings(
+async def process_entry_async(entry: Dict, semaphore: Semaphore, pbar: tqdm) -> List[Dict]:
+    async with semaphore:
+        result = await process_entry(entry)
+        pbar.update(1)
+        return result
+
+async def generate_embeddings_async(
     embedding_config: Dict,
-    include_existing: bool = False
+    include_existing: bool = False,
+    max_concurrent_tasks: int = 5
 ) -> List[Dict]:
     feed_dict = retrieve_file(
         file=embedding_config['input_podcast_file'],
         dir_name=embedding_config['input_podcast_dir']
     )
 
-    chunked_dicts = [
-        embedding for entry in feed_dict
-        for embedding in process_entry(entry)
-    ]
+    semaphore = Semaphore(max_concurrent_tasks)
+
+    chunked_dicts = []
+    with tqdm(total=len(feed_dict), desc="Processing entries") as pbar:
+        tasks = [process_entry_async(entry, semaphore, pbar) for entry in feed_dict]
+        results = await asyncio.gather(*tasks)
+        for result in results:
+            chunked_dicts.extend(result)
     
     if include_existing:
         existing_chunked_dicts = load_existing_dicts(embedding_config)
@@ -91,3 +111,13 @@ def generate_embeddings(
     )
 
     return chunked_dicts
+
+def generate_embeddings(
+    embedding_config: Dict,
+    include_existing: bool = False,
+    max_concurrent_tasks: int = 5
+) -> List[Dict]:
+    return asyncio.run(generate_embeddings_async(embedding_config, include_existing, max_concurrent_tasks))
+
+if __name__ == "__main__":
+    pass
