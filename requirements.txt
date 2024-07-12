@@ -13,6 +13,7 @@ pyannote.audio
 pydub
 python-dateutil
 python-dotenv
+streamlit
 tenacity
 tqdm
 yt_dlp

@@ -22,8 +22,8 @@ def single_question(question: str, similar_chunks: List[Dict]) -> dict:
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        llm_function=groq_text_response,
-        llm_model_choice="llama3-70b",
+        # llm_function=groq_text_response,
+        # llm_model_choice="llama3-70b",
     )
 
 def question_with_chat_state(question: str, chat_state: List[Dict], table_name: str) -> Dict:

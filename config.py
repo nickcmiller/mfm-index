@@ -1,7 +1,7 @@
 CONFIG = {
     'feed_url': "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ",
-    'start_date': "November 1, 2023",
-    'end_date': "December 1, 2023",
+    'start_date': "July 1, 2024",
+    'end_date': "July 10, 2024",
     'process_new_episodes': True,
     'generate_embeddings': True,
     'write_to_table': True,
@@ -28,12 +28,6 @@ EMBEDDING_CONFIG = {
 
 TABLE_CONFIG = {
     'table_name': "vector_table",
-    'input_file_name': EMBEDDING_CONFIG['output_file_name'],
-    'input_dir_name': EMBEDDING_CONFIG['output_dir_name']
-}
-
-QUERY_CONFIG = {
-    'question': "What do Ben and John think of the Vision Pro?",
     'input_file_name': EMBEDDING_CONFIG['output_file_name'],
     'input_dir_name': EMBEDDING_CONFIG['output_dir_name']
 }

@@ -1,8 +1,7 @@
-from config import CONFIG, PODCAST_CONFIG, EMBEDDING_CONFIG, TABLE_CONFIG, QUERY_CONFIG
+from config import CONFIG, PODCAST_CONFIG, EMBEDDING_CONFIG, TABLE_CONFIG
 from podcast_processor import process_podcast_feed
 from embedding_generator import generate_embeddings
 from sql_operations import write_to_table
-from query_handler import handle_query
 
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
 
@@ -25,16 +24,6 @@ def main():
             table_name=TABLE_CONFIG['table_name'],
             list_of_objects=list_of_objects
         )
-
-    # if CONFIG['run_query']:
-    #     response = handle_query(QUERY_CONFIG)
-
-    #     question = QUERY_CONFIG['question']
-
-    #     print(f"Number of query responses: {len(response['query_response'])}")
-    #     # print(json.dumps(response['query_response'], indent=4))
-    #     print(f"\n\nQuestion: {question}\n\n")
-    #     print(f"Response: {response['llm_response']}\n\n")
 
 if __name__ == "__main__":
     main()
