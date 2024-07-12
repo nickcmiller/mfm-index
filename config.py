@@ -1,8 +1,8 @@
 CONFIG = {
     'feed_url': "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ",
-    'start_date': "July 1, 2023",
-    'end_date': "August 1, 2023",
-    'process_new_episodes': True,
+    'start_date': "May 1, 2023",
+    'end_date': "June 1, 2023",
+    'process_new_episodes': False,
     'generate_embeddings': True,
     'write_to_table': True
 }
@@ -23,7 +23,7 @@ EMBEDDING_CONFIG = {
     'existing_embeddings_dir': "tmp",
     'output_file_name': "embedded_chunks.json",
     'output_dir_name': "tmp",
-    'delete_input_file': True
+    'delete_input_file': False
 }
 
 TABLE_CONFIG = {
