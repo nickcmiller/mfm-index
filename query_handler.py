@@ -1,16 +1,28 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from genai_toolbox.chunk_and_embed.llms_with_queries import llm_response_with_query
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding
 from genai_toolbox.text_prompting.model_calls import groq_text_response, openai_text_response, anthropic_text_response
 from sql_operations import cosine_similarity_search
 
 from typing import List, Dict
+import os
+
+
 
 def single_question(question: str, similar_chunks: List[Dict]) -> dict:
     llm_system_prompt = """
-    Use numbered references to cite sources. Identify sources at the bottom with their titles.
-    Each timestamp is its own reference (e.g. [1] Title at 01:00). 
-    Only use number citations, not source material in text.
-    Provide a thorough, detailed, and comprehensive answer.
+    Use numbered references to cite sources with their titles.
+    Each timestamp is its own reference in a markdown numbered list at the bottom. 
+    ```
+   **References:**
+    1. Source 1 Title at 0:32
+    2. Source 2 Title at 8:47
+    3. Source 3 Title at 13:36
+    ```
+    Use the same number when a citation is reused. 
+    Provide a thorough, detailed, and comprehensive answer in paragraph form.
     """
 
     source_template = "Title: {title} at {start_mins}\nText: {text}"
@@ -22,8 +34,8 @@ def single_question(question: str, similar_chunks: List[Dict]) -> dict:
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        # llm_function=groq_text_response,
-        # llm_model_choice="llama3-70b",
+        llm_function=anthropic_text_response,
+        llm_model_choice="sonnet",
     )
 
 def question_with_chat_state(question: str, chat_state: List[Dict], table_name: str) -> Dict:
@@ -46,6 +58,7 @@ def question_with_chat_state(question: str, chat_state: List[Dict], table_name: 
 if __name__ == "__main__":
     from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
     import json
+    print("Current working directory:", os.getcwd())
     
     table_name = 'vector_table'
     question = "Explain point 2 in greater detail"

@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import json
 import numpy as np
 from typing import List, Dict, Any
@@ -8,8 +11,10 @@ from cloud_sql_gcp.databases.connection import get_db_engine
 from cloud_sql_gcp.databases.operations import ensure_pgvector_extension, write_list_of_objects_to_table, read_from_table, read_similar_rows, delete_table
 from cloud_sql_gcp.utils.logging import setup_logging
 
+
 logger = setup_logging()
 config = load_config()
+
 
 def initialize_database(
     table_name, 
@@ -91,7 +96,7 @@ def read_from_table_and_log(
 
             if not keep_embeddings:
                 non_embedding_rows = [{k: v for k, v in row.items() if k != 'embedding'} for row in rows]
-                # logger.info(f"Row non-embedding values: {json.dumps(non_embedding_rows[:5], indent=4)}")
+                logger.info(f"Row non-embedding values: {json.dumps(non_embedding_rows[:5], indent=4)}")
                 result['non_embedding_rows'] = non_embedding_rows
             else:
                 for row in rows:
@@ -170,7 +175,8 @@ def delete_table_if_exists(
         except Exception as e:
             logger.error(f"Error deleting table '{table_name}': {e}", exc_info=True)
 
-def load_and_process_data() -> List[Dict[str, Any]]:
+def load_and_process_data(
+) -> List[Dict[str, Any]]:
     """
     Load and process data from a JSON file.
 
@@ -234,23 +240,8 @@ def main(
     logger.info("Main function completed")
 
 if __name__ == "__main__":
-    import json 
-    import sys
-    
-    from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding
-
-    embed_query = create_openai_embedding(
-        text="What's the latest with Adobe and Figma?",
-        model_choice="text-embedding-3-large"
-    )
-
-    table_name = 'vector_table'
-    list_of_objects = load_and_process_data()
-    
-    if len(sys.argv) > 1:
-        operation = sys.argv[1]
-    else:
-        operation = 'init'  # default operation
-    
-
-    main(operation, embed_query)
+    import os
+    print(f"CONFIG: {config}")
+    print(f"Current working directory: {os.getcwd()}")
+    with open('.env', 'r') as file:
+        print(file.read())

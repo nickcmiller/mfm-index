@@ -1,6 +1,3 @@
-
-
-
 from genai_toolbox.chunk_and_embed.embedding_functions import (
     create_openai_embedding, 
     embed_dict_list, 
@@ -19,11 +16,29 @@ from typing import List, Dict
 import re
 import time
 
+from dotenv import load_dotenv
 import asyncio
 from asyncio import Semaphore
 from tqdm.asyncio import tqdm
+from httpx import HTTPStatusError
+
+load_dotenv()
+
+class HTTPXFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        self.first_request = True
+
+    def filter(self, record):
+        if 'HTTP Request:' in record.getMessage():
+            if self.first_request:
+                self.first_request = False
+                return True
+            return False
+        return True
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").addFilter(HTTPXFilter())
 
 async def process_entry(
     entry: Dict,

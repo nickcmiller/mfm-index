@@ -180,6 +180,7 @@ def read_from_table(
         logger.error(f"Error reading from table '{table_name}': {e}", exc_info=True)
         raise
 
+@db_retry_decorator()
 def read_similar_rows(
     engine: Any,
     table_name: str,

@@ -40,7 +40,7 @@ PROCESSED_OUTPUT=$(gsutil ls -l gs://${SQL_INSTANCE}_backup | awk '{
         for (i=4; i<=NF; i++) file = file " " $i
         printf "\nDate: %s\nSize: %.2f MB\n%s\n", date, size/1024/1024, file
     }
-}')
+}' )
 
 if [ -z "$PROCESSED_OUTPUT" ]; then
     log "No backups found or failed to process backups."

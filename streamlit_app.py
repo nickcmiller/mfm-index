@@ -1,18 +1,16 @@
-import sys
-import os
-
-# Add the current directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
-
-import streamlit as st
-from query_handler import question_with_chat_state
-import os
 from dotenv import load_dotenv
 load_dotenv()
 
-table_name = os.getenv("TABLE_NAME")
-print(f"Table name: {table_name}")
+import streamlit as st
+from query_handler import question_with_chat_state
+
+import os
+
+# Check if OPENAI_API_KEY is set
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    st.error("OPENAI_API_KEY is not set in the environment variables.")
+    st.stop()
 
 chat_state = []
 
