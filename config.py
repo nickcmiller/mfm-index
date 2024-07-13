@@ -1,7 +1,7 @@
 CONFIG = {
     'feed_url': "https://dithering.passport.online/feed/podcast/KCHirQXM6YBNd6xFa1KkNJ",
-    'start_date': "January 1, 2023",
-    'end_date': "February 1, 2023",
+    'start_date': "December 1, 2022",
+    'end_date': "December 15, 2022",
     'process_new_episodes': True,
     'generate_embeddings': True,
     'write_to_table': True
@@ -30,5 +30,5 @@ TABLE_CONFIG = {
     'table_name': "vector_table",
     'input_file_name': EMBEDDING_CONFIG['output_file_name'],
     'input_dir_name': EMBEDDING_CONFIG['output_dir_name'],
-    'delete_input_file': False
+    'delete_input_file': True
 }

@@ -5,12 +5,7 @@ import streamlit as st
 from query_handler import question_with_chat_state
 
 import os
-
-# Check if OPENAI_API_KEY is set
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
-    st.error("OPENAI_API_KEY is not set in the environment variables.")
-    st.stop()
+table_name = os.getenv("TABLE_NAME")
 
 chat_state = []
 

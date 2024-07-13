@@ -22,6 +22,21 @@ gcloud config get-value account
 log "Initializing Terraform..."
 terraform init
 
+# Check if the SQL instance already exists
+if gcloud sql instances describe ${SQL_INSTANCE} &>/dev/null; then
+    log "SQL instance ${SQL_INSTANCE} already exists. Importing into Terraform state..."
+    terraform import \
+      -var "ADMIN_PASSWORD=${SQL_PASSWORD}" \
+      -var "DEFAULT_PROJECT=${PROJECT_ID}" \
+      -var "DEFAULT_REGION=${DEFAULT_REGION}" \
+      -var "DEFAULT_ZONE=${DEFAULT_ZONE}" \
+      -var "SQL_INSTANCE=${SQL_INSTANCE}" \
+      -var "DATABASE_NAME=${SQL_DATABASE}" \
+      google_sql_database_instance.mfm_index_sql_instance projects/${PROJECT_ID}/instances/${SQL_INSTANCE} || log "Failed to import existing instance into Terraform state"
+else
+    log "SQL instance ${SQL_INSTANCE} does not exist. It will be created by Terraform."
+fi
+
 # Show current Terraform state
 log "Current Terraform state:"
 terraform show
