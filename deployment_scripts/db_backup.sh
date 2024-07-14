@@ -4,6 +4,9 @@ set -euo pipefail
 # Source environment variables
 source .env
 
+# Change to deployment_scripts directory
+cd deployment_scripts
+
 # Function to log messages
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"

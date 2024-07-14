@@ -9,9 +9,10 @@ from sql_operations import cosine_similarity_search
 from typing import List, Dict
 import os
 
-
-
-def single_question(question: str, similar_chunks: List[Dict]) -> dict:
+def single_question(
+    question: str, 
+    similar_chunks: List[Dict]
+) -> dict:
     llm_system_prompt = """
     Use numbered references to cite sources with their titles.
     Each timestamp is its own reference in a markdown numbered list at the bottom. 
@@ -38,7 +39,11 @@ def single_question(question: str, similar_chunks: List[Dict]) -> dict:
         llm_model_choice="sonnet",
     )
 
-def question_with_chat_state(question: str, chat_state: List[Dict], table_name: str) -> Dict:
+def question_with_chat_state(
+    question: str, 
+    chat_state: List[Dict], 
+    table_name: str
+) -> Dict:
     prompt = f"Question: {question}\n\nBased on this question and the prior messages, what question should I ask my vector database?"
     question_system_instructions = "Return only the question to be asked. No formatting, just the question."
 

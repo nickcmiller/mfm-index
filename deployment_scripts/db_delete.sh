@@ -4,6 +4,9 @@ set -euo pipefail
 # Source environment variables
 source .env
 
+# Change to deployment_scripts directory
+cd deployment_scripts
+
 # Function to log messages
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
@@ -25,7 +28,7 @@ terraform init
 read -p "Do you want to perform a backup before deletion? (y/N): " BACKUP_CONFIRM
 if [[ ${BACKUP_CONFIRM,,} == "y" ]]; then
     log "Performing backup..."
-    ./db_backup.sh
+    ./deployment_scripts/db_backup.sh
     log "Backup completed."
 fi
 
