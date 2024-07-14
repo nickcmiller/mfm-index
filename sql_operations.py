@@ -96,12 +96,12 @@ def read_from_table_and_log(
 
             if not keep_embeddings:
                 non_embedding_rows = [{k: v for k, v in row.items() if k != 'embedding'} for row in rows]
-                logger.info(f"Row non-embedding values: {json.dumps(non_embedding_rows[:5], indent=4)}")
+                logger.info(f"Row non-embedding values: {json.dumps(non_embedding_rows[:1], indent=4)}")
                 result['non_embedding_rows'] = non_embedding_rows
             else:
                 for row in rows:
                     logger.info(f"Embedding type: {type(row['embedding'])}")
-                    logger.info(f"Embedding sample: {row['embedding'][:10]}")
+                    logger.info(f"Embedding sample: {row['embedding'][:1]}")
 
             return result
         except Exception as e:
@@ -226,8 +226,8 @@ def main(
             result = operations[operation](table_name, query_embedding, config=config)
         elif operation == 'read':
             result = operations[operation](table_name, None, config=config)
-            for row in result['non_embedding_rows']:
-                logger.info(f"Episode Title: {row['title']}")
+            # for row in result['non_embedding_rows']:
+            #     logger.info(f"Episode Title: {row['title']}")
             result = result['non_embedding_rows'][:1]
         else:
             result = operations[operation](table_name, None, config=config)
@@ -241,7 +241,5 @@ def main(
 
 if __name__ == "__main__":
     import os
-    print(f"CONFIG: {config}")
-    print(f"Current working directory: {os.getcwd()}")
-    with open('.env', 'r') as file:
-        print(file.read())
+    table_name = os.getenv('TABLE_NAME')
+    main('read')
