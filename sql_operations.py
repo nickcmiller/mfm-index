@@ -6,11 +6,10 @@ import numpy as np
 from typing import List, Dict, Any
 
 from genai_toolbox.helper_functions.string_helpers import retrieve_file
-from cloud_sql_gcp.config.gcp_sql_config import load_config
-from cloud_sql_gcp.databases.connection import get_db_engine
-from cloud_sql_gcp.databases.operations import ensure_pgvector_extension, write_list_of_objects_to_table, read_from_table, read_similar_rows, delete_table
-from cloud_sql_gcp.utils.logging import setup_logging
-
+from gcp_postgres_pgvector.config.gcp_sql_config import load_config
+from gcp_postgres_pgvector.databases.connection import get_db_engine
+from gcp_postgres_pgvector.databases.operations import ensure_pgvector_extension, write_list_of_objects_to_table, read_from_table, read_similar_rows, delete_table
+from gcp_postgres_pgvector.utils.logging import setup_logging
 
 logger = setup_logging()
 config = load_config()
