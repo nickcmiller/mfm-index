@@ -43,12 +43,17 @@ fi
 
 # Destroy Terraform-managed resources
 log "Destroying Terraform-managed resources..."
-terraform destroy -var "ADMIN_PASSWORD=${SQL_PASSWORD}" \
+terraform destroy -target=module.postgres_pgvector_db \
+                  -var "ADMIN_PASSWORD=${ADMIN_PASSWORD}" \
                   -var "DEFAULT_PROJECT=${PROJECT_ID}" \
                   -var "DEFAULT_REGION=${DEFAULT_REGION}" \
                   -var "DEFAULT_ZONE=${DEFAULT_ZONE}" \
                   -var "SQL_INSTANCE=${SQL_INSTANCE}" \
                   -var "DATABASE_NAME=${SQL_DATABASE}" \
+                  -var "DATABASE_VERSION=${DATABASE_VERSION}" \
+                  -var "DELETION_PROTECTION=${DELETION_PROTECTION}" \
+                  -var "TIER=${TIER}" \
+                  -var "ADMIN_USER=${ADMIN_USER}" \
                   -auto-approve
 
 log "Resources deleted successfully"

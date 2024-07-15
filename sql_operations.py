@@ -14,7 +14,6 @@ from gcp_postgres_pgvector.utils.logging import setup_logging
 logger = setup_logging()
 config = load_config()
 
-
 def initialize_database(
     table_name, 
     _,

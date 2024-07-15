@@ -21,12 +21,12 @@ provider "google" {
 module "postgres_pgvector_db" {
   source = "./modules/postgres_pgvector_db"
 
-  INSTANCE_NAME       = "mfm-index-sql-instance"
-  DATABASE_VERSION    = "POSTGRES_14"
+  INSTANCE_NAME       = var.SQL_INSTANCE
+  DATABASE_VERSION    = var.DATABASE_VERSION
   REGION              = var.DEFAULT_REGION
-  DELETION_PROTECTION = false
-  TIER                = "db-f1-micro"
-  ADMIN_USER          = "admin"
+  DELETION_PROTECTION = var.DELETION_PROTECTION
+  TIER                = var.TIER
+  ADMIN_USER          = var.ADMIN_USER
   ADMIN_PASSWORD      = var.ADMIN_PASSWORD
-  DATABASE_NAME       = "mfm-index-sql-database"
+  DATABASE_NAME       = var.DATABASE_NAME
 }

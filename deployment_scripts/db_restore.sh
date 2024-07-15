@@ -25,15 +25,26 @@ terraform init
 
 # Check if the SQL instance already exists
 if gcloud sql instances describe ${SQL_INSTANCE} &>/dev/null; then
-    log "SQL instance ${SQL_INSTANCE} already exists. Importing into Terraform state..."
-    terraform import \
-      -var "ADMIN_PASSWORD=${SQL_PASSWORD}" \
-      -var "DEFAULT_PROJECT=${PROJECT_ID}" \
-      -var "DEFAULT_REGION=${DEFAULT_REGION}" \
-      -var "DEFAULT_ZONE=${DEFAULT_ZONE}" \
-      -var "SQL_INSTANCE=${SQL_INSTANCE}" \
-      -var "DATABASE_NAME=${SQL_DATABASE}" \
-      google_sql_database_instance.mfm_index_sql_instance projects/${PROJECT_ID}/instances/${SQL_INSTANCE} || log "Failed to import existing instance into Terraform state"
+    log "SQL instance ${SQL_INSTANCE} already exists."
+    
+    # Check if the resource is already in Terraform state
+    if terraform state list | grep -q "module.postgres_pgvector_db.google_sql_database_instance.postgres_pgvector_instance"; then
+        log "SQL instance is already in Terraform state. Skipping import."
+    else
+        log "Importing SQL instance into Terraform state..."
+        terraform import \
+            -var "ADMIN_PASSWORD=${ADMIN_PASSWORD}" \
+            -var "DEFAULT_PROJECT=${PROJECT_ID}" \
+            -var "DEFAULT_REGION=${DEFAULT_REGION}" \
+            -var "DEFAULT_ZONE=${DEFAULT_ZONE}" \
+            -var "SQL_INSTANCE=${SQL_INSTANCE}" \
+            -var "DATABASE_NAME=${SQL_DATABASE}" \
+            -var "DATABASE_VERSION=${DATABASE_VERSION}" \
+            -var "DELETION_PROTECTION=${DELETION_PROTECTION}" \
+            -var "TIER=${TIER}" \
+            -var "ADMIN_USER=${ADMIN_USER}" \
+            module.postgres_pgvector_db.google_sql_database_instance.postgres_pgvector_instance ${PROJECT_ID}/${DEFAULT_REGION}/${SQL_INSTANCE}
+    fi
 else
     log "SQL instance ${SQL_INSTANCE} does not exist. It will be created by Terraform."
 fi
@@ -70,12 +81,16 @@ read -p "Enter the full path of the backup file to restore: " BACKUP_FILE
 # Restore Terraform-managed resources
 log "Restoring Terraform-managed resources..."
 terraform apply -target=module.postgres_pgvector_db \
-                -var "ADMIN_PASSWORD=${SQL_PASSWORD}" \
+                -var "ADMIN_PASSWORD=${ADMIN_PASSWORD}" \
                 -var "DEFAULT_PROJECT=${PROJECT_ID}" \
                 -var "DEFAULT_REGION=${DEFAULT_REGION}" \
                 -var "DEFAULT_ZONE=${DEFAULT_ZONE}" \
                 -var "SQL_INSTANCE=${SQL_INSTANCE}" \
                 -var "DATABASE_NAME=${SQL_DATABASE}" \
+                -var "DATABASE_VERSION=${DATABASE_VERSION}" \
+                -var "DELETION_PROTECTION=${DELETION_PROTECTION}" \
+                -var "TIER=${TIER}" \
+                -var "ADMIN_USER=${ADMIN_USER}" \
                 -auto-approve
 
 
