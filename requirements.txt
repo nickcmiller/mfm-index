@@ -3,6 +3,7 @@ asyncio
 feedparser
 google-cloud-storage
 groq
+fastapi
 numpy
 openai
 scikit-learn
@@ -13,6 +14,7 @@ pyannote.audio
 pydub
 python-dateutil
 python-dotenv
+requests
 streamlit
 tenacity
 tqdm

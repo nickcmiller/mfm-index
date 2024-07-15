@@ -1,11 +1,12 @@
+import streamlit as st
+import requests
+import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
-import streamlit as st
-from query_handler import question_with_chat_state
-
-import os
-table_name = os.getenv("TABLE_NAME")
+TABLE_NAME = os.getenv("TABLE_NAME")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 chat_state = []
 
@@ -21,15 +22,20 @@ if prompt:
     st.session_state['messages'].append({"role": "user", "content": prompt})
     
     try:
-        # Call question_with_chat_state with the new prompt
-        response = question_with_chat_state(
-            question=prompt,
-            chat_state=st.session_state['messages'],
-            table_name=table_name,
+        # Call the backend API
+        response = requests.post(
+            f"{BACKEND_URL}/ask_question",
+            json={
+                "question": prompt,
+                "chat_state": st.session_state['messages'],
+                "table_name": TABLE_NAME
+            }
         )
+        response.raise_for_status()
+        result = response.json()
         
         # Append the response to the chat history
-        st.session_state['messages'].append({"role": "assistant", "content": response['llm_response']})
+        st.session_state['messages'].append({"role": "assistant", "content": result['llm_response']})
     except Exception as e:
         error_message = f"An error occurred: {str(e)}"
         st.error(error_message)
