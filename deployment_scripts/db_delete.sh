@@ -4,9 +4,6 @@ set -euo pipefail
 # Source environment variables
 source .env
 
-# Change to deployment_scripts directory
-cd deployment_scripts
-
 # Function to log messages
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
@@ -20,9 +17,6 @@ log "PROJECT_ID: ${PROJECT_ID}"
 log "Active account:"
 gcloud config get-value account
 
-# Initialize Terraform
-log "Initializing Terraform..."
-terraform init
 
 # Prompt user to confirm backup before deletion
 read -p "Do you want to perform a backup before deletion? (y/N): " BACKUP_CONFIRM
@@ -31,6 +25,11 @@ if [[ ${BACKUP_CONFIRM,,} == "y" ]]; then
     ./deployment_scripts/db_backup.sh
     log "Backup completed."
 fi
+
+# Initialize Terraform
+cd deployment_scripts/terraform
+log "Initializing Terraform..."
+terraform init
 
 # Prompt user to confirm deletion
 log "Current Terraform state:"

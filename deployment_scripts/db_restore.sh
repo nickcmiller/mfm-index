@@ -4,9 +4,6 @@ set -euo pipefail
 # Source environment variables
 source .env
 
-# Change to deployment_scripts directory
-cd deployment_scripts
-
 # Function to log messages
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
@@ -23,6 +20,7 @@ gcloud config get-value account
 
 # Initialize Terraform
 log "Initializing Terraform..."
+cd ./deployment_scripts/terraform
 terraform init
 
 # Check if the SQL instance already exists
@@ -69,9 +67,10 @@ fi
 # Prompt user to select a backup file
 read -p "Enter the full path of the backup file to restore: " BACKUP_FILE
 
-# Apply Terraform configuration
-log "Applying Terraform configuration..."
-terraform apply -var "ADMIN_PASSWORD=${SQL_PASSWORD}" \
+# Restore Terraform-managed resources
+log "Restoring Terraform-managed resources..."
+terraform apply -target=module.postgres_pgvector_db \
+                -var "ADMIN_PASSWORD=${SQL_PASSWORD}" \
                 -var "DEFAULT_PROJECT=${PROJECT_ID}" \
                 -var "DEFAULT_REGION=${DEFAULT_REGION}" \
                 -var "DEFAULT_ZONE=${DEFAULT_ZONE}" \

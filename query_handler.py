@@ -63,7 +63,6 @@ def question_with_chat_state(
 if __name__ == "__main__":
     from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
     import json
-    print("Current working directory:", os.getcwd())
     
     table_name = 'vector_table'
     question = "Explain point 2 in greater detail"
