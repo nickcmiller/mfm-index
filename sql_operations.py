@@ -65,24 +65,24 @@ def read_from_table_and_log(
     keep_embeddings=False
 ) -> Dict[str, Any]:
     """
-    Read data from the specified table and log the results.
+        Read data from the specified table and log the results.
 
-    This function connects to the database, reads all rows from the specified table,
-    logs information about the data read, and returns the rows based on the keep_embeddings flag.
+        This function connects to the database, reads all rows from the specified table,
+        logs information about the data read, and returns the rows based on the keep_embeddings flag.
 
-    Args:
-        config (dict): A dictionary containing the database configuration parameters.
-        table_name (str): The name of the table to read from.
-        _ (Any): Placeholder for unused parameter (maintained for function signature consistency).
-        keep_embeddings (bool): Flag to determine whether to keep embeddings in the returned data.
+        Args:
+            config (dict): A dictionary containing the database configuration parameters.
+            table_name (str): The name of the table to read from.
+            _ (Any): Placeholder for unused parameter (maintained for function signature consistency).
+            keep_embeddings (bool): Flag to determine whether to keep embeddings in the returned data.
 
-    Returns:
-        dict: A dictionary containing one or two keys:
-            - 'rows': A list of all rows read from the table, including embeddings if keep_embeddings is True.
-            - 'non_embedding_rows': A list of all rows with the 'embedding' field removed (only if keep_embeddings is False).
+        Returns:
+            dict: A dictionary containing one or two keys:
+                - 'rows': A list of all rows read from the table, including embeddings if keep_embeddings is True.
+                - 'non_embedding_rows': A list of all rows with the 'embedding' field removed (only if keep_embeddings is False).
 
-    Raises:
-        Exception: If there's an error during the database read operation.
+        Raises:
+            Exception: If there's an error during the database read operation.
     """
     with get_db_engine(config) as engine:
         try:
