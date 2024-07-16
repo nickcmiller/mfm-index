@@ -1,10 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from config import CONFIG, PODCAST_CONFIG, EMBEDDING_CONFIG, TABLE_CONFIG
-from podcast_processor import process_podcast_feed
-from embedding_generator import generate_embeddings
-from sql_operations import write_to_table
+from table_updates.config import CONFIG, PODCAST_CONFIG, EMBEDDING_CONFIG, TABLE_CONFIG
+from table_updates.podcast_processor import process_podcast_feed
+from table_updates.embedding_generator import generate_embeddings
+from table_updates.sql_operations import write_to_table
 from genai_toolbox.helper_functions.string_helpers import retrieve_file, delete_file
 
 import logging
@@ -43,7 +43,4 @@ def main():
                 file=TABLE_CONFIG['input_file_name'],
                 dir_name=TABLE_CONFIG['input_dir_name']
             )
-
-if __name__ == "__main__":
-    main()
     

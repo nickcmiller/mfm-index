@@ -1,13 +1,55 @@
-from dotenv import load_dotenv
-load_dotenv()
+from typing import List, Dict, Any
+import os
 
 from genai_toolbox.chunk_and_embed.llms_with_queries import llm_response_with_query
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding
 from genai_toolbox.text_prompting.model_calls import groq_text_response, openai_text_response, anthropic_text_response
-from sql_operations import cosine_similarity_search
+from gcp_postgres_pgvector.config.gcp_sql_config import load_config
+from gcp_postgres_pgvector.databases.connection import get_db_engine
+from gcp_postgres_pgvector.databases.operations import read_similar_rows
+from gcp_postgres_pgvector.utils.logging import setup_logging
 
-from typing import List, Dict
-import os
+logger = setup_logging()
+config = load_config()
+
+def cosine_similarity_search(
+    table_name, 
+    query_embedding, 
+    limit=5,
+    config=config
+) -> List[Dict[str, Any]]:
+    """
+    Perform a cosine similarity search on the specified table.
+
+    This function connects to the database and performs a cosine similarity search
+    using the provided query embedding. It returns the most similar rows based on
+    the cosine similarity between the query embedding and the stored embeddings.
+
+    Args:
+        config (dict): A dictionary containing the database configuration parameters.
+        table_name (str): The name of the table to search in.
+        query_embedding (list): The query embedding to compare against.
+        limit (int): The maximum number of similar rows to return.
+
+    Returns:
+        list: A list of dictionaries containing the most similar rows and their similarity scores.
+
+    Raises:
+        Exception: If there's an error during the database search operation.
+    """
+    with get_db_engine(config) as engine:
+        try:
+            similar_rows = read_similar_rows(engine, table_name, query_embedding, limit=limit)
+            logger.info(f"Found {len(similar_rows)} similar rows in table '{table_name}'")
+            
+            for row in similar_rows:
+                logger.info(f"Similarity: {row['similarity']}, ID: {row['id']}")
+                logger.info(f"Text: {row['text'][:100]}...")
+            
+            return similar_rows
+        except Exception as e:
+            logger.error(f"Failed to perform cosine similarity search: {e}", exc_info=True)
+            raise
 
 def single_question(
     question: str, 
@@ -59,49 +101,7 @@ def question_with_chat_state(
     similar_chunks = cosine_similarity_search(table_name=table_name, query_embedding=query_embedding, limit=5)
 
     return single_question(question=revised_question, similar_chunks=similar_chunks)
-
-if __name__ == "__main__":
-    from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
-    import json
     
-    table_name = 'vector_table'
-    question = "Explain point 2 in greater detail"
-
-    chat_state = [
-        {
-            "role": "user", 
-            "content": "What is the relevance of encryption in regulation?"
-        },
-        {
-            "role": "assistant",
-            "content": """
-Encryption plays a crucial role in regulation, particularly in the context of balancing security, privacy, and control over information. Historically, encryption has been a contentious issue in regulatory frameworks, as evidenced by the export laws in the 1990s that restricted the export of encryption algorithms above a certain cryptographic strength. These regulations were aimed at preventing the misuse of strong encryption by adversaries but were often seen as overly restrictive and counterproductive by technologists and privacy advocates [1].
-
-The relevance of encryption in regulation can be broken down into several key aspects:
-
-1. **National Security and Law Enforcement**: Governments often regulate encryption to ensure that law enforcement and intelligence agencies can access communications when necessary. This is driven by the fear that strong encryption could be used by malicious actors to conceal their activities, making it difficult for authorities to intercept and decipher communications [2]. However, this creates a tension between the need for security and the right to privacy.
-
-2. **Privacy and Civil Liberties**: Encryption is fundamental to protecting the privacy of individuals and organizations. It ensures that sensitive information, such as personal communications, financial transactions, and proprietary business data, remains confidential and secure from unauthorized access. The debate around encryption regulation often centers on finding a balance between enabling government access for security purposes and protecting individual privacy rights [3].
-
-3. **Technological Innovation and Economic Impact**: Overly restrictive encryption regulations can stifle innovation and economic growth. For example, the limitations on exporting strong encryption in the 1990s were seen as hindering the development and global competitiveness of the tech industry. Today, encryption is a critical component of many technologies, from secure messaging apps to online banking, and regulations need to consider the potential impact on technological advancement and economic activity [4].
-
-4. **Global Standards and Interoperability**: Encryption regulations can vary significantly between countries, leading to challenges in creating globally interoperable systems. Companies operating internationally must navigate a complex landscape of regulatory requirements, which can complicate the development and deployment of secure technologies. Harmonizing encryption standards and regulations across borders is essential for ensuring that security measures are effective and universally applicable [5].
-
-5. **Public Perception and Trust**: The regulation of encryption also affects public trust in technology and government. If people believe that their communications and data are not secure, they may be less likely to use digital services, which can have broader implications for digital adoption and trust in institutions. Conversely, transparent and balanced encryption regulations can enhance public confidence in the security and privacy of digital services [6].
-
-In summary, encryption is a pivotal element in the regulatory landscape, influencing national security, privacy, technological innovation, global interoperability, and public trust. Effective regulation must strike a delicate balance between enabling legitimate government access and protecting the privacy and security of individuals and organizations.
-            """
-        }
-    ]
-
-    response = question_with_chat_state(
-        question=question,
-        chat_state=chat_state,
-        table_name=table_name,
-    )
-
-    print(json.dumps(response['similar_chunks'], indent=4))
-    print(response['llm_response'])
 
 
 

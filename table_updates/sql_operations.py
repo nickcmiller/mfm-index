@@ -104,7 +104,7 @@ def read_from_table_and_log(
             return result
         except Exception as e:
             logger.error(f"Failed to read from table: {e}", exc_info=True)
-            raise
+            raisei
 
 def cosine_similarity_search(
     table_name, 
@@ -198,7 +198,8 @@ def load_and_process_data(
 
 def main(
     operation, 
-    query_embedding=None
+    query_embedding=None,
+    table_name=None
 ) -> None:
     logger.info(f"Starting main function with operation: {operation}")
     config = load_config()
@@ -235,9 +236,4 @@ def main(
     except Exception as e:
         logger.error(f"An error occurred in main: {e}", exc_info=True)
     
-    logger.info("Main function completed")
-
-if __name__ == "__main__":
-    import os
-    table_name = os.getenv('TABLE_NAME')
-    main('read')
+    logger.info("Main function completed")    
