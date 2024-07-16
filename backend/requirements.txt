@@ -1,0 +1,4 @@
+fastapi
+uvicorn
+git+https://github.com/nickcmiller/genai_toolbox.git
+git+https://github.com/nickcmiller/gcp_postgres_pgvector.git

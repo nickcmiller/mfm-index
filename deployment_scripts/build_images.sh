@@ -8,5 +8,4 @@ REGION="${DEFAULT_REGION}"
 # docker push gcr.io/$PROJECT_ID/backend-api
 
 # Build and push frontend image
-docker build -t gcr.io/$PROJECT_ID/streamlit-app ./streamlit_app
-docker push gcr.io/$PROJECT_ID/streamlit-app
+gcloud builds submit --tag gcr.io/$PROJECT_ID/streamlit-app ./frontend
