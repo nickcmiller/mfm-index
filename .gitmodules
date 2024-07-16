@@ -1,6 +1,6 @@
-[submodule "genai_toolbox"]
+[submodule "backend/genai_toolbox"]
 	path = backend/genai_toolbox
 	url = https://github.com/nickcmiller/genai_toolbox.git
-[submodule "gcp_postgres_pgvector"]
+[submodule "backend/gcp_postgres_pgvector"]
 	path = backend/gcp_postgres_pgvector
 	url = https://github.com/nickcmiller/gcp_postgres_pgvector.git
