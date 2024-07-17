@@ -1,3 +1,11 @@
+import os
+from dotenv import load_dotenv
+
+# Load .env file from the parent directory
+dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(dotenv_path)
+
+
 from typing import List, Dict, Any
 import os
 
@@ -105,8 +113,6 @@ def question_with_chat_state(
 
 if __name__ == "__main__":
     import json
-    from dotenv import load_dotenv
-    load_dotenv()
     
     table_name = 'vector_table'
     question = "Explain point 2 in greater detail"
