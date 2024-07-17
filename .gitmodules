@@ -1,6 +1,0 @@
-[submodule "genai_toolbox"]
-	path = genai_toolbox
-	url = https://github.com/nickcmiller/genai_toolbox.git
-[submodule "gcp_postgres_pgvector"]
-	path = gcp_postgres_pgvector
-	url = https://github.com/nickcmiller/gcp_postgres_pgvector.git
