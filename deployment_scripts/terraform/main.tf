@@ -133,6 +133,15 @@ resource "google_cloud_run_service" "backend_api" {
           name  = "SQL_INSTANCE"
           value = var.SQL_INSTANCE
         }
+
+        env {
+          name  = "ADMIN_USER"
+          value = var.ADMIN_USER
+        }
+        env {
+          name  = "ADMIN_PASSWORD"
+          value = var.ADMIN_PASSWORD
+        }
         env {
           name  = "TABLE_NAME"
           value = var.TABLE_NAME
