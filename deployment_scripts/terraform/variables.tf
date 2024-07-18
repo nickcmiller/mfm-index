@@ -38,3 +38,28 @@ variable "DEFAULT_ZONE" {
 variable "DATABASE_NAME" {
   type = string
 }
+
+variable "SQL_DATABASE" {
+  description = "Same as DATABASE_NAME"
+  type        = string
+}
+
+variable "GROQ_API_KEY" {
+  description = "API key for GROQ"
+  type        = string
+}
+
+variable "OPENAI_API_KEY" {
+  description = "API key for OpenAI"
+  type        = string
+}
+
+variable "SQL_HOST" {
+  description = "SQL host"
+  type        = string
+}
+
+variable "TABLE_NAME" {
+  description = "Table name for vector storage"
+  type        = string
+}

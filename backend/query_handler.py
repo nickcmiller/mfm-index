@@ -1,13 +1,7 @@
 import os
-from dotenv import load_dotenv
-
-# Load .env file from the parent directory
-dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-load_dotenv(dotenv_path)
-
-
 from typing import List, Dict, Any
-import os
+from dotenv import load_dotenv
+load_dotenv()
 
 from genai_toolbox.chunk_and_embed.llms_with_queries import llm_response_with_query
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding
@@ -19,6 +13,8 @@ from gcp_postgres_pgvector.utils.logging import setup_logging
 
 logger = setup_logging()
 config = load_config()
+# Log the config before attempting to connect
+logger.info(f"Config: {config}")
 
 def cosine_similarity_search(
     table_name, 
@@ -46,6 +42,7 @@ def cosine_similarity_search(
             Exception: If there's an error during the database search operation.
     """
     with get_db_engine(config) as engine:
+        logger.info(f"Connected to database: {engine}")
         try:
             similar_rows = read_similar_rows(engine, table_name, query_embedding, limit=limit)
             logger.info(f"Found {len(similar_rows)} similar rows in table '{table_name}'")
@@ -85,8 +82,8 @@ def single_question(
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        llm_function=anthropic_text_response,
-        llm_model_choice="sonnet",
+        llm_function=groq_text_response,
+        llm_model_choice="llama3-70b",
     )
 
 def question_with_chat_state(
@@ -94,6 +91,33 @@ def question_with_chat_state(
     chat_state: List[Dict], 
     table_name: str
 ) -> Dict:
+    """
+        Process a question with chat context and retrieve relevant information from a vector database.
+
+        This function takes a user's question, the current chat state, and a table name for the vector database.
+        It then performs the following steps:
+        1. Generates a revised question based on the chat context using a language model.
+        2. Creates an embedding for the revised question.
+        3. Performs a cosine similarity search in the vector database to find relevant chunks of information.
+        4. Generates a response using the retrieved information and the revised question.
+
+        Args:
+            question (str): The user's current question.
+            chat_state (List[Dict]): A list of dictionaries representing the chat history.
+                Each dictionary should have 'role' and 'content' keys.
+            table_name (str): The name of the table in the vector database to search.
+
+        Returns:
+            Dict: A dictionary containing the response from the language model and similar chunks of information.
+                The structure is determined by the `single_question` function.
+
+        Note:
+            This function relies on several helper functions and external services, including:
+            - groq_text_response: For generating the revised question.
+            - create_openai_embedding: For creating embeddings.
+            - cosine_similarity_search: For searching the vector database.
+            - single_question: For generating the final response.
+    """
     prompt = f"Question: {question}\n\nBased on this question and the prior messages, what question should I ask my vector database?"
     question_system_instructions = "Return only the question to be asked. No formatting, just the question."
 
