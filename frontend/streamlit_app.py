@@ -21,6 +21,15 @@ if 'messages' not in st.session_state:
     st.session_state['messages'] = [{"role": "assistant", "content": "What question would you like to ask about Dithering?"}]
 
 def get_id_token(audience):
+    """
+    This function retrieves the Google ID token for the specified audience. The audience is the URL of the backend API.
+
+    Args:
+        audience (str): The audience for which the ID token is requested.
+
+    Returns:
+        str: The Google ID token.
+    """
     credentials, _ = google.auth.default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
     auth_req = Request()
     id_token_credentials = id_token.fetch_id_token(auth_req, audience)
