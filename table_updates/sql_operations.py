@@ -92,6 +92,10 @@ def read_from_table_and_log(
 
             result = {'rows': rows}
 
+            if rows:
+                for row in rows:
+                    print(row['title'])
+
             if not keep_embeddings:
                 non_embedding_rows = [{k: v for k, v in row.items() if k != 'embedding'} for row in rows]
                 logger.info(f"Row non-embedding values: {json.dumps(non_embedding_rows[:1], indent=4)}")
@@ -104,7 +108,7 @@ def read_from_table_and_log(
             return result
         except Exception as e:
             logger.error(f"Failed to read from table: {e}", exc_info=True)
-            raisei
+            raise
 
 def cosine_similarity_search(
     table_name, 
@@ -236,4 +240,14 @@ def main(
     except Exception as e:
         logger.error(f"An error occurred in main: {e}", exc_info=True)
     
-    logger.info("Main function completed")    
+    logger.info("Main function completed")
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Process some arguments.")
+    parser.add_argument("operation", type=str, help="Specify the operation to perform")
+
+    args = parser.parse_args()
+
+    main(args.operation, table_name='vector_table')

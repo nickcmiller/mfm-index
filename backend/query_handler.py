@@ -82,8 +82,8 @@ def single_question(
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        llm_function=groq_text_response,
-        llm_model_choice="llama3-70b",
+        llm_function=openai_text_response,
+        llm_model_choice="4o-mini",
     )
 
 def question_with_chat_state(
@@ -122,15 +122,15 @@ def question_with_chat_state(
     question_system_instructions = "Return only the question to be asked. No formatting, just the question."
 
     chat_messages = chat_state[-5:][::-1] + [{"role": "system", "content": question_system_instructions}]
-    revised_question = groq_text_response(
+    revised_question = openai_text_response(
         prompt=prompt,
-        model_choice="llama3-70b",
+        model_choice="4o-mini",
         history_messages=chat_messages,
         system_instructions=question_system_instructions,
     )
 
     query_embedding = create_openai_embedding(text=revised_question, model_choice="text-embedding-3-large")
-    similar_chunks = cosine_similarity_search(table_name=table_name, query_embedding=query_embedding, limit=5)
+    similar_chunks = cosine_similarity_search(table_name=table_name, query_embedding=query_embedding, limit=10)
 
     return single_question(question=revised_question, similar_chunks=similar_chunks)
     
