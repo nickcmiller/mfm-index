@@ -29,10 +29,21 @@ async def download_and_transcribe_multiple_episodes_by_date(
 
     semaphore = Semaphore(max_concurrent_tasks)
 
-    async def process_entry(entry: Dict[str, str], pbar: tqdm) -> Dict[str, str]:
+    async def process_entry(
+        entry: Dict[str, str], 
+        pbar: tqdm
+    ) -> Dict[str, str]:
         async with semaphore:
             try:
-                entry = await process_stages(entry, pbar, max_retries, retry_delay, audio_dir_name, utterances_dir_name, utterances_replaced_dir_name)
+                entry = await process_stages(
+                    entry, 
+                    pbar, 
+                    max_retries, 
+                    retry_delay, 
+                    audio_dir_name, 
+                    utterances_dir_name, 
+                    utterances_replaced_dir_name
+                )
                 await cleanup_audio_file(entry, pbar)
                 pbar.update(1)
                 return entry
@@ -82,7 +93,16 @@ async def process_stages(
         try:
             stage_name = "Utterances generation"
             logging.info(f"Starting {stage_name} for entry {entry['title']}")
-            result = await retry_stage(stage_name, generate_assemblyai_utterances, entry, pbar, max_retries, retry_delay, entry['audio_download'], utterances_dir_name)
+            result = await retry_stage(
+                stage_name, 
+                generate_assemblyai_utterances, 
+                entry, 
+                pbar, 
+                max_retries, 
+                retry_delay, 
+                entry['audio_download'], 
+                utterances_dir_name
+            )
             entry['utterances_dict'] = result
             logging.info(f"Completed {stage_name} for entry {entry['title']}")
         except Exception as e:
@@ -94,7 +114,17 @@ async def process_stages(
         try:
             stage_name = "Utterances replacement"
             logging.info(f"Starting {stage_name} for entry {entry['title']}")
-            result = await retry_stage(stage_name, replace_speakers_in_assemblyai_utterances, entry, pbar, max_retries, retry_delay, entry['utterances_dict'], entry['summary_generation'], utterances_replaced_dir_name)
+            result = await retry_stage(
+                stage_name, 
+                replace_speakers_in_assemblyai_utterances, 
+                entry, 
+                pbar, 
+                max_retries, 
+                retry_delay, 
+                entry['utterances_dict'], 
+                entry['summary_generation'], 
+                utterances_replaced_dir_name
+            )
             entry['replaced_dict'] = result
             logging.info(f"Completed {stage_name} for entry {entry['title']}")
         except Exception as e:
@@ -127,19 +157,6 @@ async def retry_stage(
             else:
                 raise
 
-async def cleanup_audio_file(
-    entry: Dict[str, str], 
-    pbar: tqdm, 
-    audio_dir_name: Optional[str] = None, 
-    utterances_dir_name: Optional[str] = None, 
-    utterances_replaced_dir_name: Optional[str] = None
-) -> None:
-    if 'audio_file_path' in entry and os.path.exists(entry['audio_file_path']):
-        os.remove(entry['audio_file_path'])
-        logging.info(f"Removed audio file: {entry['audio_file_path']}")
-    else:
-        logging.warning(f"Audio file not found for cleanup: {entry.get('audio_file_path', 'Not set')}")
-
 def handle_retry_exception(
     stage_name: str, 
     entry: Dict[str, str], 
@@ -156,6 +173,19 @@ def handle_retry_exception(
         logging.error(f"Failed {stage_name} for {entry['title']} after {max_retries} attempts: {str(e)}")
         logging.debug(f"Traceback: {traceback.format_exc()}")
         pbar.set_postfix({"stage": f"{stage_name} failed"})
+
+async def cleanup_audio_file(
+    entry: Dict[str, str], 
+    pbar: tqdm, 
+    audio_dir_name: Optional[str] = None, 
+    utterances_dir_name: Optional[str] = None, 
+    utterances_replaced_dir_name: Optional[str] = None
+) -> None:
+    if 'audio_file_path' in entry and os.path.exists(entry['audio_file_path']):
+        os.remove(entry['audio_file_path'])
+        logging.info(f"Removed audio file: {entry['audio_file_path']}")
+    else:
+        logging.warning(f"Audio file not found for cleanup: {entry.get('audio_file_path', 'Not set')}")
 
 def process_podcast_feed(
     podcast_config: dict
