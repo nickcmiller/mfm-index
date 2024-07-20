@@ -45,10 +45,51 @@ async def process_entry(
     consolidation_threshold: float = 0.35,
     pbar: tqdm = None
 ) -> List[Dict]:
+    """
+    Process a single podcast entry asynchronously.
+
+    This function performs several operations on a podcast entry:
+    1. Converts speaker information in utterances
+    2. Embeds the utterances using OpenAI's embedding model
+    3. Calculates similarity between consecutive utterances
+    4. Consolidates similar utterances
+    5. Re-embeds the consolidated utterances
+    6. Adds metadata to the processed chunks
+
+    Args:
+        entry (Dict): A dictionary containing podcast entry information. Expected keys:
+            - 'feed_title' (str): The title of the podcast feed
+            - 'title' (str): The title of the specific episode
+            - 'published' (str): The publication date of the episode
+            - 'replaced_dict' (Dict): A dictionary containing:
+                - 'transcribed_utterances' (List[Dict]): A list of utterance dictionaries
+        consolidation_threshold (float, optional): Threshold for consolidating similar utterances. Defaults to 0.35.
+        pbar (tqdm, optional): Progress bar object for updating processing status. Defaults to None.
+
+    Returns:
+        List[Dict]: A list of dictionaries containing the processed and embedded utterances with metadata.
+        Each dictionary in the list is expected to have the following keys:
+            - 'text' (str): The consolidated utterance text
+            - 'speakers' (List[str]): List of speakers in the utterance
+            - 'start_ms' (int): Start time of the utterance in milliseconds
+            - 'end_ms' (int): End time of the utterance in milliseconds
+            - 'embedding' (List[float]): The embedding vector for the utterance
+            - 'title' (str): The title of the episode including feed title, date, and episode title
+            - 'publisher' (str): The title of the podcast feed
+            - 'publish_date' (str): The publication date of the episode
+
+    Raises:
+        Any exceptions raised by the underlying functions are not caught here and will propagate up.
+    """
+    
     feed_title = entry['feed_title']
     episode_title = entry['title']
     episode_date = convert_date_format(entry['published'])
     utterances = entry['replaced_dict']['transcribed_utterances']
+
+    video_id = None
+    if 'video_id' in entry:
+        video_id = entry['video_id']
     
     async def update_stage(stage_name):
         if pbar:
@@ -87,30 +128,38 @@ async def process_entry(
         key_to_embed="text",
         model_choice="text-embedding-3-large"
     )
-    
-    await update_stage("Adding metadata")
-    additional_metadata = {
-        "title": f"{feed_title} - {episode_date}: {episode_title}"
-    }
-    titled_utterances = add_metadata_to_chunks(
-        chunks=consolidated_embeddings,
-        additional_metadata=additional_metadata
-    )
-    
-    await update_stage("Formatting utterances")
-    formatted_utterances = format_speakers_in_utterances(titled_utterances)
+
+    await update_stage("Formatting times utterances")
+    formatted_utterances = format_speakers_in_utterances(consolidated_embeddings)
     minutes_utterances = milliseconds_to_minutes_in_utterances(formatted_utterances)
     renamed_utterances = rename_start_end_to_ms(minutes_utterances)
     
+    await update_stage("Adding metadata")
+    additional_metadata = {
+        "title": f"{feed_title} - {episode_date}: {episode_title}",
+        "publisher": feed_title,
+        "date_published": episode_date,
+    }
+    titled_utterances = add_metadata_to_chunks(
+        chunks=renamed_utterances,
+        additional_metadata=additional_metadata
+    )
+
+    await update_stage("Creating YouTube links")
+    if video_id:
+        for utterance in titled_utterances:
+            start_seconds = utterance['start_ms'] // 1000
+            utterance['youtube_link'] = f"https://www.youtube.com/watch?v={video_id}&t={start_seconds}s"
+    
     await update_stage("Generating IDs")
-    for utterance in renamed_utterances:
+    for utterance in titled_utterances:
         start = utterance['start_ms']
         feed_regex = re.sub(r'[^a-zA-Z0-9\s]', '', feed_title)
         episode_regex = re.sub(r'[^a-zA-Z0-9\s]', '', episode_title)
         utterance['id'] = f"{start} {feed_regex} {episode_regex}".replace(' ', '-')
     
     await update_stage("Completed")
-    return renamed_utterances
+    return titled_utterances
 
 async def process_entry_async(entry: Dict, semaphore: Semaphore, pbar: tqdm) -> List[Dict]:
     async with semaphore:
@@ -145,8 +194,8 @@ async def generate_embeddings_async(
     max_concurrent_tasks: int = 5
 ) -> List[Dict]:
     feed_dict = retrieve_file(
-        file=embedding_config['input_podcast_file'],
-        dir_name=embedding_config['input_podcast_dir']
+        file=embedding_config['input_file'],
+        dir_name=embedding_config['input_dir']
     )
 
     semaphore = Semaphore(max_concurrent_tasks)
