@@ -118,7 +118,7 @@ def question_with_chat_state(
             - cosine_similarity_search: For searching the vector database.
             - single_question: For generating the final response.
     """
-    prompt = f"Question: {question}\n\nBased on this question and the prior messages, what question should I ask my vector database?"
+    prompt = f"Question: {question}\n\nBased on this question and the prior messages, what question should I ask my vector database? Only use prior messages if they are relevant to the question. If prior questions are not relevant, just return the question as is."
     question_system_instructions = "Return only the question to be asked. No formatting, just the question."
 
     chat_messages = chat_state[-5:][::-1] + [{"role": "system", "content": question_system_instructions}]
@@ -128,6 +128,7 @@ def question_with_chat_state(
         history_messages=chat_messages,
         system_instructions=question_system_instructions,
     )
+    logger.info(f"Revised question: {revised_question}")
 
     query_embedding = create_openai_embedding(text=revised_question, model_choice="text-embedding-3-large")
     similar_chunks = cosine_similarity_search(table_name=table_name, query_embedding=query_embedding, limit=10)
@@ -139,7 +140,7 @@ if __name__ == "__main__":
     import json
     
     table_name = 'vector_table'
-    question = "Explain point 2 in greater detail"
+    question = "What are Jack Dorsey's views on the second point?"
 
     chat_state = [
         {
