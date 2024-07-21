@@ -19,33 +19,47 @@ logger.info(f"Config: {config}")
 def cosine_similarity_search(
     table_name, 
     query_embedding, 
-    limit=5,
+    limit=15,
+    similarity_threshold=0.35,
     config=config
 ) -> List[Dict[str, Any]]:
     """
         Perform a cosine similarity search on the specified table.
 
-        This function connects to the database and performs a cosine similarity search
-        using the provided query embedding. It returns the most similar rows based on
-        the cosine similarity between the query embedding and the stored embeddings.
+        This function searches for rows in the given table that have embeddings similar to the query embedding.
+        It filters the results based on a similarity threshold and returns the most similar rows.
 
         Args:
-            config (dict): A dictionary containing the database configuration parameters.
             table_name (str): The name of the table to search in.
-            query_embedding (list): The query embedding to compare against.
-            limit (int): The maximum number of similar rows to return.
+            query_embedding (list): The embedding vector to compare against.
+            limit (int, optional): The maximum number of results to return. Defaults to 15.
+            similarity_threshold (float, optional): The minimum similarity score for a row to be included in the results. Defaults to 0.35.
+            config (dict, optional): Configuration dictionary for database connection. Defaults to the global config.
 
         Returns:
-            list: A list of dictionaries containing the most similar rows and their similarity scores.
+            List[Dict[str, Any]]: A list of dictionaries containing the similar rows, each with keys:
+                - 'id': The row ID
+                - 'text': The text content
+                - 'similarity': The cosine similarity score
+                - Any other columns present in the table
 
         Raises:
-            Exception: If there's an error during the database search operation.
+            Exception: If there's an error during the database operation or similarity search.
+
+        Note:
+            This function logs information about the search process and results using the configured logger.
     """
     with get_db_engine(config) as engine:
         logger.info(f"Connected to database: {engine}")
         try:
-            similar_rows = read_similar_rows(engine, table_name, query_embedding, limit=limit)
-            logger.info(f"Found {len(similar_rows)} similar rows in table '{table_name}'")
+            similar_rows = read_similar_rows(
+                engine, 
+                table_name, 
+                query_embedding, 
+                limit=limit,
+                similarity_threshold=similarity_threshold
+            )
+            logger.info(f"Returned {len(similar_rows)} rows from table '{table_name}' above threshold {similarity_threshold}")
             
             for row in similar_rows:
                 logger.info(f"Similarity: {row['similarity']}, ID: {row['id']}")
@@ -55,11 +69,16 @@ def cosine_similarity_search(
         except Exception as e:
             logger.error(f"Failed to perform cosine similarity search: {e}", exc_info=True)
             raise
-
 def single_question(
     question: str, 
     similar_chunks: List[Dict]
 ) -> dict:
+    if not similar_chunks:
+        return {
+            "llm_response": "I'm sorry, but I don't have enough information to answer this question based on the available data.",
+            "similar_chunks": []
+        }
+
     llm_system_prompt = """
     Use numbered references to cite sources with their titles.
     Each timestamp is its own reference in a markdown numbered list at the bottom. 
@@ -131,7 +150,7 @@ def question_with_chat_state(
     logger.info(f"Revised question: {revised_question}")
 
     query_embedding = create_openai_embedding(text=revised_question, model_choice="text-embedding-3-large")
-    similar_chunks = cosine_similarity_search(table_name=table_name, query_embedding=query_embedding, limit=10)
+    similar_chunks = cosine_similarity_search(table_name=table_name, query_embedding=query_embedding)
 
     return single_question(question=revised_question, similar_chunks=similar_chunks)
     
@@ -140,7 +159,7 @@ if __name__ == "__main__":
     import json
     
     table_name = 'vector_table'
-    question = "What are Jack Dorsey's views on the second point?"
+    question = "How does Elon compared to Zuckerberg?"
 
     chat_state = [
         {
