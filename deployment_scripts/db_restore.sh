@@ -43,6 +43,11 @@ if gcloud sql instances describe ${SQL_INSTANCE} &>/dev/null; then
             -var "DELETION_PROTECTION=${DELETION_PROTECTION}" \
             -var "TIER=${TIER}" \
             -var "ADMIN_USER=${ADMIN_USER}" \
+            -var "SQL_DATABASE=${SQL_DATABASE}" \
+            -var "GROQ_API_KEY=${GROQ_API_KEY}" \
+            -var "OPENAI_API_KEY=${OPENAI_API_KEY}" \
+            -var "SQL_HOST=${SQL_HOST}" \
+            -var "TABLE_NAME=${TABLE_NAME}" \
             module.postgres_pgvector_db.google_sql_database_instance.postgres_pgvector_instance ${PROJECT_ID}/${DEFAULT_REGION}/${SQL_INSTANCE}
     fi
 else
@@ -91,6 +96,11 @@ terraform apply -target=module.postgres_pgvector_db \
                 -var "DELETION_PROTECTION=${DELETION_PROTECTION}" \
                 -var "TIER=${TIER}" \
                 -var "ADMIN_USER=${ADMIN_USER}" \
+                -var "SQL_DATABASE=${SQL_DATABASE}" \
+                -var "GROQ_API_KEY=${GROQ_API_KEY}" \
+                -var "OPENAI_API_KEY=${OPENAI_API_KEY}" \
+                -var "SQL_HOST=${SQL_HOST}" \
+                -var "TABLE_NAME=${TABLE_NAME}" \
                 -auto-approve
 
 
