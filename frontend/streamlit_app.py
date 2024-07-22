@@ -53,13 +53,11 @@ if prompt:
             "table_name": TABLE_NAME
         }
 
-        logger.info(f"Sending request to backend: {full_url}")
-        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+        logger.info(f"Sending request to backend: {full_url}\nPayload: {json.dumps(payload, indent=2)}")
 
         response = make_authorized_request(full_url, method='POST', json=payload)
         
-        logger.info(f"Response status code: {response.status_code}")
-        logger.info(f"Response headers: {response.headers}")
+        logger.info(f"Response status code: {response.status_code}\nResponse headers: {response.headers}")
         
         response.raise_for_status()
         result = response.json()
