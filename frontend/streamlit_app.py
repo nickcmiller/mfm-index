@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -8,12 +9,13 @@ from google.auth.transport.requests import Request
 from google.oauth2 import id_token
 import requests
 
-
 load_dotenv()
 
 TABLE_NAME = os.getenv("TABLE_NAME")
 BACKEND_URL = os.getenv("BACKEND_URL")
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize or load messages
@@ -21,15 +23,6 @@ if 'messages' not in st.session_state:
     st.session_state['messages'] = [{"role": "assistant", "content": "What question would you like to ask about Dithering?"}]
 
 def get_id_token(audience):
-    """
-    This function retrieves the Google ID token for the specified audience. The audience is the URL of the backend API.
-
-    Args:
-        audience (str): The audience for which the ID token is requested.
-
-    Returns:
-        str: The Google ID token.
-    """
     credentials, _ = google.auth.default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
     auth_req = Request()
     id_token_credentials = id_token.fetch_id_token(auth_req, audience)
@@ -60,13 +53,24 @@ if prompt:
             "table_name": TABLE_NAME
         }
 
+        logger.info(f"Sending request to backend: {full_url}")
+        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+
         response = make_authorized_request(full_url, method='POST', json=payload)
+        
+        logger.info(f"Response status code: {response.status_code}")
+        logger.info(f"Response headers: {response.headers}")
         
         response.raise_for_status()
         result = response.json()
-                
-        # Append the response to the chat history
-        st.session_state['messages'].append({"role": "assistant", "content": result['llm_response']})
+        
+        logger.info(f"Raw response from backend: {json.dumps(result, indent=2)}")
+        
+        if 'llm_response' in result:
+            st.session_state['messages'].append({"role": "assistant", "content": result['llm_response']})
+        else:
+            logger.error(f"Unexpected response format: {result}")
+            st.error("Received an unexpected response format from the backend.")
     except requests.exceptions.RequestException as e:
         error_message = f"An error occurred: {str(e)}"
         if hasattr(e, 'response'):
@@ -75,6 +79,7 @@ if prompt:
             error_message += f"\nHeaders: {e.response.headers}"
         st.error(error_message)
         logger.error(error_message)
+
 # Function to display all messages
 def display_messages():
     for message in st.session_state['messages']:
