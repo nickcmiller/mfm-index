@@ -46,6 +46,7 @@ def write_to_table(
 ) -> None:
     with get_db_engine(config) as engine:
         try:
+            ensure_pgvector_extension(engine)
             write_list_of_objects_to_table(
                 engine, 
                 table_name, 
@@ -85,6 +86,7 @@ def read_from_table_and_log(
             Exception: If there's an error during the database read operation.
     """
     with get_db_engine(config) as engine:
+        ensure_pgvector_extension(engine)
         try:
             rows = read_from_table(engine, table_name, include_embedding=keep_embeddings)
             logger.info(f"Read {len(rows)} rows from table '{table_name}'")
@@ -94,7 +96,7 @@ def read_from_table_and_log(
 
             if rows:
                 for row in rows:
-                    print(row['title'])
+                    print(row['id'], row['title'])
 
             if not keep_embeddings:
                 non_embedding_rows = [{k: v for k, v in row.items() if k != 'embedding'} for row in rows]
@@ -137,6 +139,7 @@ def cosine_similarity_search(
     """
     with get_db_engine(config) as engine:
         try:
+            ensure_pgvector_extension(engine)
             similar_rows = read_similar_rows(engine, table_name, query_embedding, limit=limit)
             logger.info(f"Found {len(similar_rows)} similar rows in table '{table_name}'")
             
@@ -172,6 +175,7 @@ def delete_table_if_exists(
     logger.info(f"Deleting table '{table_name}'")
     with get_db_engine(config) as engine:
         try:
+            ensure_pgvector_extension(engine)
             delete_table(engine, table_name)
             logger.info(f"Table '{table_name}' deleted successfully")
         except Exception as e:
@@ -220,7 +224,7 @@ def main(
         logger.error(f"Invalid operation: {operation}")
         return
     
-    try:
+    try:        
         if operation == 'similarity':
             if query_embedding is None:
                 # Generate a random query embedding if none is provided
@@ -229,8 +233,6 @@ def main(
             result = operations[operation](table_name, query_embedding, config=config)
         elif operation == 'read':
             result = operations[operation](table_name, None, config=config)
-            # for row in result['non_embedding_rows']:
-            #     logger.info(f"Episode Title: {row['title']}")
             result = result['non_embedding_rows'][:1]
         else:
             result = operations[operation](table_name, None, config=config)

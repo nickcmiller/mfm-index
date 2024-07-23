@@ -55,7 +55,8 @@ def cosine_similarity_search(
             similar_rows = read_similar_rows(
                 engine, 
                 table_name, 
-                query_embedding, 
+                query_embedding,
+                included_columns=['id', 'text', 'title', 'start_mins', 'youtube_link'],
                 limit=limit,
                 similarity_threshold=similarity_threshold
             )
@@ -69,6 +70,7 @@ def cosine_similarity_search(
         except Exception as e:
             logger.error(f"Failed to perform cosine similarity search: {e}", exc_info=True)
             raise
+
 def single_question(
     question: str, 
     similar_chunks: List[Dict]
@@ -84,16 +86,16 @@ def single_question(
     Each timestamp is its own reference in a markdown numbered list at the bottom. 
     ```
    **References:**
-    1. Source 1 Title at 0:32
-    2. Source 2 Title at 8:47
-    3. Source 3 Title at 13:36
+    1. Source 1 Title at [0:32](https://youtube.com/watch?v=dQw4w9WgXcQ&t=32)
+    2. Source 2 Title at [8:47](https://youtube.com/watch?v=oHg5SJYRHA0&t=527)
+    3. Source 3 Title at [13:36](https://youtube.com/watch?v=xvFZjo5PgG0&t=816)
     ```
     Use the same number when a citation is reused. 
     Provide a thorough, detailed, and comprehensive answer in paragraph form.
     """
 
-    source_template = "Title: {title} at {start_mins}\nText: {text}"
-    template_args = {"title": "title", "text": "text", "start_mins": "start_mins"}
+    source_template = "Title: {title} at [{start_mins}]({youtube_link})\nText: {text}"
+    template_args = {"title": "title", "text": "text", "start_mins": "start_mins", "youtube_link": "youtube_link"}
 
     return llm_response_with_query(
         similar_chunks=similar_chunks,
@@ -160,7 +162,7 @@ if __name__ == "__main__":
     import json
     
     table_name = 'vector_table'
-    question = "Who is Godzilla?"
+    question = "Who is Ed Thorpe?"
 
     chat_state = [
     #     {
@@ -205,7 +207,7 @@ if __name__ == "__main__":
 
     # print(json.dumps(response['similar_chunks'], indent=4))
     print(response['llm_response'])
-    print(response['similar_chunks'])
+    # print(response['similar_chunks'])
 
 
 

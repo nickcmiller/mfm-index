@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize or load messages
 if 'messages' not in st.session_state:
-    st.session_state['messages'] = [{"role": "assistant", "content": "What question would you like to ask about Dithering?"}]
+    st.session_state['messages'] = [{"role": "assistant", "content": "I have access to transcripts of the My First Million podcast. What would you like to know?"}]
 
 def get_id_token(audience):
     credentials, _ = google.auth.default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
@@ -36,12 +36,20 @@ def make_authorized_request(url, method='GET', **kwargs):
     response = requests.request(method, url, headers=headers, **kwargs)
     return response
 
+# Function to clean up special characters
+def clean_text(text):
+    # Decode Unicode escape sequences
+    text = text.encode('utf-8').decode('unicode_escape')
+    # Replace newline escape sequences with actual newlines
+    text = text.replace('\\n', '\n')
+    return text
+
 # Chat input
 prompt = st.chat_input("Say something")
 
 # Handle new message
 if prompt:
-    st.session_state['messages'].append({"role": "user", "content": prompt})
+    st.session_state['messages'].append({"role": "user", "content": clean_text(prompt)})
     
     try:
         # Call the backend API with authenticated request
@@ -65,7 +73,7 @@ if prompt:
         logger.info(f"Raw response from backend: {json.dumps(result, indent=2)}")
         
         if 'llm_response' in result:
-            st.session_state['messages'].append({"role": "assistant", "content": result['llm_response']})
+            st.session_state['messages'].append({"role": "assistant", "content": clean_text(result['llm_response'])})
         else:
             logger.error(f"Unexpected response format: {result}")
             st.error("Received an unexpected response format from the backend.")
@@ -82,7 +90,7 @@ if prompt:
 def display_messages():
     for message in st.session_state['messages']:
         with st.chat_message(message["role"]):
-            st.write(message["content"])
+            st.write(clean_text(message["content"]))
 
 # Display messages
 display_messages()
