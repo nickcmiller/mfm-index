@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+import re
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -36,12 +37,25 @@ def make_authorized_request(url, method='GET', **kwargs):
     response = requests.request(method, url, headers=headers, **kwargs)
     return response
 
-# Function to clean up special characters
+# Function to fix encoding issues
+def fix_encoding_issues(text):
+    try:
+        text = text.encode('latin1').decode('utf-8')
+    except UnicodeEncodeError:
+        pass  # If encoding fails, return the original text
+    return text
+
+# Function to clean up special characters and remove formatting
 def clean_text(text):
     # Decode Unicode escape sequences
     text = text.encode('utf-8').decode('unicode_escape')
     # Replace newline escape sequences with actual newlines
     text = text.replace('\\n', '\n')
+    # Fix encoding issues
+    text = fix_encoding_issues(text)
+    # Remove Markdown and HTML tags
+    text = re.sub(r'<.*?>', '', text)  # Remove HTML tags
+    text = re.sub(r'\*|_', '', text)  # Remove Markdown formatting
     return text
 
 # Chat input

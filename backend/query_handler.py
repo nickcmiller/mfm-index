@@ -103,8 +103,8 @@ def single_question(
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        llm_function=openai_text_response,
-        llm_model_choice="4o-mini",
+        llm_function=anthropic_text_response,
+        llm_model_choice="sonnet",
     )
 
 def question_with_chat_state(
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     import json
     
     table_name = 'vector_table'
-    question = "Who is Ed Thorpe?"
+    question = "How would I start a business from scratch?"
 
     chat_state = [
     #     {
