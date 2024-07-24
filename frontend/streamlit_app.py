@@ -21,8 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize or load messages
 if 'messages' not in st.session_state:
-    # st.session_state['messages'] = [{"role": "assistant", "content": "I have access to transcripts of the My First Million podcast. What would you like to know?"}]
-    st.session_state['messages'] = [{"role": "assistant", "content": "$600 per year, generating annual revenue of about $18-24 million."}]
+    st.session_state['messages'] = [{"role": "assistant", "content": "I have access to transcripts of the My First Million podcast. What would you like to know?"}]
 def get_id_token(audience):
     credentials, _ = google.auth.default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
     auth_req = Request()
@@ -45,11 +44,6 @@ def make_authorized_request(url, method='GET', **kwargs):
         return requests.request(method, url, headers=headers, **kwargs)
 
 def clean_text(text):
-    try:
-        text = text.encode('utf-8').decode('unicode_escape')
-    except UnicodeDecodeError:
-        pass  # If decoding fails, skip this step
-
     # Replace newline escape sequences with actual newlines
     text = text.replace('\\n', '\n')
 
@@ -57,7 +51,7 @@ def clean_text(text):
     text = re.sub(r'<.*?>', '', text)
 
     # Remove Markdown formatting (asterisks and underscores)
-    text = re.sub(r'(\*|_){1,2}(?=\S)(.+?)(?<=\S)\1', r'\2', text)
+    # text = re.sub(r'(\*|_){1,2}(?=\S)(.+?)(?<=\S)\1', r'\2', text)
 
     # Escape special characters for Streamlit, excluding $ and backslashes in URLs
     special_chars = "\\{}[]()#+-.!_*&"

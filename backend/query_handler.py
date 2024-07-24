@@ -83,14 +83,19 @@ def single_question(
 
     llm_system_prompt = """
     Use numbered references to cite sources with their titles.
-    Each timestamp is its own reference in a markdown numbered list at the bottom. 
+    Record each reference in a markdown numbered list at the bottom with a timestamp and a link to the source.
+    Use the same number when a citation is reused.
+
+    Example: 
     ```
+    Sentence using first source.[1] Sentence using second and third sources.[2][3]
+
    **References:**
     1. Source 1 Title at [0:32](https://youtube.com/watch?v=dQw4w9WgXcQ&t=32)
     2. Source 2 Title at [8:47](https://youtube.com/watch?v=oHg5SJYRHA0&t=527)
     3. Source 3 Title at [13:36](https://youtube.com/watch?v=xvFZjo5PgG0&t=816)
     ```
-    Use the same number when a citation is reused. 
+    
     Provide a thorough, detailed, and comprehensive answer in paragraph form.
     """
 
@@ -103,8 +108,8 @@ def single_question(
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        llm_function=anthropic_text_response,
-        llm_model_choice="sonnet",
+        llm_function=openai_text_response,
+        llm_model_choice="4o",
     )
 
 def question_with_chat_state(
