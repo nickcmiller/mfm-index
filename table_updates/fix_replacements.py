@@ -6,7 +6,7 @@ ids_to_fix = [
     
 ]
 
-with open("tmp/test_chunks.json", "r") as f:
+with open("tmp/chunks_to_embed.json", "r") as f:
     episodes = json.load(f)
 
 for episode in episodes:
@@ -19,7 +19,6 @@ for episode in episodes:
         feed_keywords=episode['feed_keywords'],
         feed_title=episode['feed_title'],
         feed_description=episode['feed_description'],
-        transcript=transcript
     )
     print(f"{'*'*20}\n Summary:\n {summary} \n{'*'*20}")
 
