@@ -1,8 +1,9 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from youtube_config import CONFIG, YOUTUBE_CONFIG, EMBEDDING_CONFIG, TABLE_CONFIG
+from youtube_config import CONFIG, YOUTUBE_CONFIG, SPEAKER_REPLACEMENT_CONFIG, EMBEDDING_CONFIG, TABLE_CONFIG
 from youtube_processor import process_youtube_feed
+from speaker_replacement import replace_speakers
 from embedding_generator import generate_embeddings
 from sql_operations import write_to_table
 from genai_toolbox.helper_functions.string_helpers import retrieve_file, delete_file
@@ -15,6 +16,10 @@ def main():
     if CONFIG['process_new_episodes']:
         logging.info(f"\n{'_'*50}\nPROCESSING NEW EPISODES\n{'_'*50}")
         process_youtube_feed(YOUTUBE_CONFIG)
+
+    if CONFIG['speaker_replacement']:
+        logging.info(f"\n{'_'*50}\nREPLACING SPEAKERS\n{'_'*50}")
+        replace_speakers(SPEAKER_REPLACEMENT_CONFIG)
     
     if CONFIG['generate_embeddings']:
         logging.info(f"\n{'_'*50}\nGENERATING EMBEDDINGS\n{'_'*50}")

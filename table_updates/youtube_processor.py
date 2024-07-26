@@ -112,27 +112,27 @@ async def process_stages(
             logging.error(f"Entry state: {entry}")
             raise
 
-    if 'utterances_dict' in entry:
-        try:
-            stage_name = "Utterances replacement"
-            logging.info(f"Starting {stage_name} for entry {entry['title']}")
-            result = await retry_stage(
-                stage_name, 
-                replace_speakers_in_assemblyai_utterances, 
-                entry, 
-                pbar, 
-                max_retries, 
-                retry_delay, 
-                entry['utterances_dict'], 
-                entry['summary_generation'], 
-                utterances_replaced_dir_name
-            )
-            entry['replaced_dict'] = result
-            logging.info(f"Completed {stage_name} for entry {entry['title']}")
-        except Exception as e:
-            logging.error(f"Error in stage {stage_name} for entry {entry['title']}: {str(e)}")
-            logging.error(f"Entry state: {entry}")
-            raise
+    # if 'utterances_dict' in entry:
+    #     try:
+    #         stage_name = "Utterances replacement"
+    #         logging.info(f"Starting {stage_name} for entry {entry['title']}")
+    #         result = await retry_stage(
+    #             stage_name, 
+    #             replace_speakers_in_assemblyai_utterances, 
+    #             entry, 
+    #             pbar, 
+    #             max_retries, 
+    #             retry_delay, 
+    #             entry['utterances_dict'], 
+    #             entry['summary_generation'], 
+    #             utterances_replaced_dir_name
+    #         )
+    #         entry['replaced_dict'] = result
+    #         logging.info(f"Completed {stage_name} for entry {entry['title']}")
+    #     except Exception as e:
+    #         logging.error(f"Error in stage {stage_name} for entry {entry['title']}: {str(e)}")
+    #         logging.error(f"Entry state: {entry}")
+    #         raise
 
     return entry
 

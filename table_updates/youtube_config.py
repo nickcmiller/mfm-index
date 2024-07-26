@@ -1,10 +1,11 @@
 CONFIG = {
     'channel_id': "UCyaN6mg5u8Cjy2ZI4ikWaug",
-    'start_date': "2024-07-10",
-    'end_date': "2024-07-26",
+    'start_date': "2024-05-28",
+    'end_date': "2024-06-1",
     'process_new_episodes': False,
+    'speaker_replacement': True,
     'generate_embeddings': True,
-    'write_to_table': True
+    'write_to_table': False
 }
 
 YOUTUBE_CONFIG = {
@@ -12,13 +13,20 @@ YOUTUBE_CONFIG = {
     'start_date': CONFIG['start_date'],
     'end_date': CONFIG['end_date'],
     'audio_dir_name': "tmp_audio",
-    'output_dir_name': "tmp",
-    'output_file_name': "chunks_to_embed.json"
+    'output_dir_name': "tmp_utterances",
+    'output_file_name': "new_utterances.json"
+}
+
+SPEAKER_REPLACEMENT_CONFIG = {
+    'input_file': YOUTUBE_CONFIG['output_file_name'],
+    'input_dir': YOUTUBE_CONFIG['output_dir_name'],
+    'output_file_name': "speaker_replaced_utterances.json",
+    'output_dir_name': "tmp"
 }
 
 EMBEDDING_CONFIG = {
-    'input_file': YOUTUBE_CONFIG['output_file_name'],
-    'input_dir': YOUTUBE_CONFIG['output_dir_name'],
+    'input_file': SPEAKER_REPLACEMENT_CONFIG['output_file_name'],
+    'input_dir': SPEAKER_REPLACEMENT_CONFIG['output_dir_name'],
     'existing_embeddings_file': "embedded_chunks.json",
     'existing_embeddings_dir': "tmp",
     'output_file_name': "embedded_chunks.json",
