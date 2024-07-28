@@ -3,6 +3,7 @@ import asyncio
 from tqdm.asyncio import tqdm
 from genai_toolbox.transcription.assemblyai_functions import replace_speakers_in_assemblyai_utterances
 from genai_toolbox.helper_functions.string_helpers import retrieve_file, write_to_file
+from gcs_functions import process_and_upload_entries
 
 async def process_utterances(config):
     utterances_data = retrieve_file(
@@ -47,6 +48,13 @@ async def process_utterances(config):
         logging.info(f"Successfully written {len(successful_entries)} entries to {config['output_file_name']}")
     else:
         logging.warning("No successful entries to write to file")
+
+    if config['upload_to_gcs']:
+        await asyncio.to_thread(
+            process_and_upload_entries,
+            successful_entries,
+            config['gcs_bucket_name'],
+        )
 
     return successful_entries
 

@@ -1,11 +1,11 @@
 CONFIG = {
     'channel_id': "UCyaN6mg5u8Cjy2ZI4ikWaug",
-    'start_date': "2024-05-28",
-    'end_date': "2024-06-1",
-    'process_new_episodes': False,
+    'start_date': "2024-05-01",
+    'end_date': "2024-05-25",
+    'process_new_episodes': True,
     'speaker_replacement': True,
     'generate_embeddings': True,
-    'write_to_table': False
+    'write_to_table': True
 }
 
 YOUTUBE_CONFIG = {
@@ -13,7 +13,7 @@ YOUTUBE_CONFIG = {
     'start_date': CONFIG['start_date'],
     'end_date': CONFIG['end_date'],
     'audio_dir_name': "tmp_audio",
-    'output_dir_name': "tmp_utterances",
+    'output_dir_name': "tmp",
     'output_file_name': "new_utterances.json"
 }
 
@@ -21,7 +21,9 @@ SPEAKER_REPLACEMENT_CONFIG = {
     'input_file': YOUTUBE_CONFIG['output_file_name'],
     'input_dir': YOUTUBE_CONFIG['output_dir_name'],
     'output_file_name': "speaker_replaced_utterances.json",
-    'output_dir_name': "tmp"
+    'output_dir_name': "tmp",
+    'upload_to_gcs': True,
+    'gcs_bucket_name': "aai_utterances_json",
 }
 
 EMBEDDING_CONFIG = {
