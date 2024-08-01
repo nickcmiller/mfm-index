@@ -5,7 +5,7 @@ load_dotenv()
 
 from genai_toolbox.chunk_and_embed.llms_with_queries import llm_response_with_query
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding
-from genai_toolbox.text_prompting.model_calls import groq_text_response, openai_text_response, anthropic_text_response, perplexity_text_response, fallback_text_response
+from genai_toolbox.text_prompting.model_calls import openai_text_response, fallback_text_response
 from gcp_postgres_pgvector.config.gcp_sql_config import load_config
 from gcp_postgres_pgvector.databases.connection import get_db_engine
 from gcp_postgres_pgvector.databases.operations import read_similar_rows
@@ -110,21 +110,17 @@ def single_question(
         template_args=template_args,
         llm_model_order=[
             {
-                "provider": "groq", 
-                "model": "llama3.1-70b"
-            },
-            {
-                "provider": "perplexity", 
-                "model": "llama3.1-70b"
-            },
-            {
                 "provider": "openai", 
                 "model": "4o-mini"
             },
             {
+                "provider": "groq", 
+                "model": "llama3.1-70b"
+            },
+            {
                 "provider": "anthropic", 
                 "model": "sonnet"
-            }
+            },
         ],
     )
 
@@ -155,7 +151,7 @@ def question_with_chat_state(
 
         Note:
             This function relies on several helper functions and external services, including:
-            - groq_text_response: For generating the revised question.
+            - openai_text_response: For generating the revised question.
             - create_openai_embedding: For creating embeddings.
             - cosine_similarity_search: For searching the vector database.
             - single_question: For generating the final response.
@@ -174,7 +170,12 @@ def question_with_chat_state(
     logger.info(f"\n\nRevised question: {revised_question}\n\n")
 
     query_embedding = create_openai_embedding(text=revised_question, model_choice="text-embedding-3-large")
-    similar_chunks = cosine_similarity_search(table_name=table_name, query_embedding=query_embedding)
+    similar_chunks = cosine_similarity_search(
+        table_name=table_name, 
+        query_embedding=query_embedding,
+        limit=10,
+        similarity_threshold=0.35
+    )
 
     return single_question(question=revised_question, similar_chunks=similar_chunks)
     
