@@ -19,35 +19,33 @@ logger.info(f"Config: {config}")
 def cosine_similarity_search(
     table_name, 
     query_embedding, 
-    limit=15,
-    similarity_threshold=0.35,
+    read_limit=15,
+    similarity_threshold=0.30,
+    filter_limit=10,
+    max_similarity_delta=0.075,
     config=config
 ) -> List[Dict[str, Any]]:
     """
         Perform a cosine similarity search on the specified table.
 
-        This function searches for rows in the given table that have embeddings similar to the query embedding.
-        It filters the results based on a similarity threshold and returns the most similar rows.
+        This function connects to the database and retrieves rows that are similar to the provided query embedding.
+        It filters the results based on a similarity threshold and limits the number of returned rows. The function
+        also logs the process, including the number of rows returned and the filtering criteria applied.
 
         Args:
             table_name (str): The name of the table to search in.
-            query_embedding (list): The embedding vector to compare against.
-            limit (int, optional): The maximum number of results to return. Defaults to 15.
-            similarity_threshold (float, optional): The minimum similarity score for a row to be included in the results. Defaults to 0.35.
-            config (dict, optional): Configuration dictionary for database connection. Defaults to the global config.
+            query_embedding (list): The query embedding to compare against.
+            read_limit (int): The maximum number of similar rows to return (default is 15).
+            similarity_threshold (float): The minimum similarity score for a row to be included in the results (default is 0.30).
+            filter_limit (int): The maximum number of rows to return after filtering based on similarity (default is 10).
+            max_similarity_delta (float): The maximum allowable difference from the highest similarity score for filtering (default is 0.075).
+            config (dict): A dictionary containing the database configuration parameters.
 
         Returns:
-            List[Dict[str, Any]]: A list of dictionaries containing the similar rows, each with keys:
-                - 'id': The row ID
-                - 'text': The text content
-                - 'similarity': The cosine similarity score
-                - Any other columns present in the table
+            list: A list of dictionaries containing the most similar rows that meet the filtering criteria.
 
         Raises:
-            Exception: If there's an error during the database operation or similarity search.
-
-        Note:
-            This function logs information about the search process and results using the configured logger.
+            Exception: If there's an error during the database search operation or if the connection to the database fails.
     """
     with get_db_engine(config) as engine:
         logger.info(f"Connected to database: {engine}")
@@ -57,16 +55,20 @@ def cosine_similarity_search(
                 table_name, 
                 query_embedding,
                 included_columns=['id', 'text', 'title', 'start_mins', 'youtube_link'],
-                limit=limit,
+                limit=read_limit,
                 similarity_threshold=similarity_threshold
             )
             logger.info(f"Returned {len(similar_rows)} rows from table '{table_name}' above threshold {similarity_threshold}")
+
+            max_similarity = max(row['similarity'] for row in similar_rows)
+            filtered_rows = [row for row in similar_rows if max_similarity - row['similarity'] <= max_similarity_delta]
+            filtered_rows = filtered_rows[:filter_limit]
+            logger.info(f"Filtered down to {len(filtered_rows)} rows within {max_similarity_delta} of the highest similarity score: {max_similarity}")
+
+            for row in filtered_rows:
+                logger.info(f"Similarity: {row['similarity']} - {row['title']} {row['start_mins']}")
             
-            for row in similar_rows:
-                logger.info(f"Similarity: {row['similarity']}, ID: {row['id']}")
-                logger.info(f"Text: {row['text'][:100]}...")
-            
-            return similar_rows
+            return filtered_rows
         except Exception as e:
             logger.error(f"Failed to perform cosine similarity search: {e}", exc_info=True)
             raise
@@ -173,8 +175,6 @@ def question_with_chat_state(
     similar_chunks = cosine_similarity_search(
         table_name=table_name, 
         query_embedding=query_embedding,
-        limit=10,
-        similarity_threshold=0.35
     )
 
     return single_question(question=revised_question, similar_chunks=similar_chunks)
