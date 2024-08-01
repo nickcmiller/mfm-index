@@ -5,7 +5,7 @@ load_dotenv()
 
 from genai_toolbox.chunk_and_embed.llms_with_queries import llm_response_with_query
 from genai_toolbox.chunk_and_embed.embedding_functions import create_openai_embedding
-from genai_toolbox.text_prompting.model_calls import groq_text_response, openai_text_response, anthropic_text_response
+from genai_toolbox.text_prompting.model_calls import groq_text_response, openai_text_response, anthropic_text_response, perplexity_text_response, fallback_text_response
 from gcp_postgres_pgvector.config.gcp_sql_config import load_config
 from gcp_postgres_pgvector.databases.connection import get_db_engine
 from gcp_postgres_pgvector.databases.operations import read_similar_rows
@@ -108,8 +108,24 @@ def single_question(
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        llm_function=openai_text_response,
-        llm_model_choice="4o",
+        llm_model_order=[
+            {
+                "provider": "groq", 
+                "model": "llama3.1-70b"
+            },
+            {
+                "provider": "perplexity", 
+                "model": "llama3.1-70b"
+            },
+            {
+                "provider": "openai", 
+                "model": "4o-mini"
+            },
+            {
+                "provider": "anthropic", 
+                "model": "sonnet"
+            }
+        ],
     )
 
 def question_with_chat_state(
@@ -147,7 +163,7 @@ def question_with_chat_state(
     prompt = f"Question: {question}\n\nBased on this question and the prior messages, what question should I ask my vector database? Only use prior messages if they are relevant to the question. If prior questions are not relevant, just return the question as is."
     question_system_instructions = "Return only the question to be asked. No formatting, just the question."
 
-    chat_messages = chat_state[-5:][::-1] + [{"role": "user", "content": question}]
+    chat_messages = chat_state[-5:][::-1] + [{"role": "user", "content": question}, {"role": "assistant", "content": "I will follow the instructions."}]
     logger.info(f"Chat messages: {chat_messages}")
     revised_question = openai_text_response(
         prompt=prompt,
@@ -155,7 +171,7 @@ def question_with_chat_state(
         history_messages=chat_messages,
         system_instructions=question_system_instructions,
     )
-    logger.info(f"Revised question: {revised_question}")
+    logger.info(f"\n\nRevised question: {revised_question}\n\n")
 
     query_embedding = create_openai_embedding(text=revised_question, model_choice="text-embedding-3-large")
     similar_chunks = cosine_similarity_search(table_name=table_name, query_embedding=query_embedding)

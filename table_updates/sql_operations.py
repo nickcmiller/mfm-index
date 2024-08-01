@@ -153,9 +153,9 @@ def cosine_similarity_search(
             similar_rows = read_similar_rows(engine, table_name, query_embedding, limit=limit)
             logger.info(f"Found {len(similar_rows)} similar rows in table '{table_name}'")
             
-            for row in similar_rows:
-                logger.info(f"Similarity: {row['similarity']}, ID: {row['id']}")
-                logger.info(f"Text: {row['text'][:100]}...")
+            # for row in similar_rows:
+            #     logger.info(f"Similarity: {row['similarity']}, ID: {row['id']}")
+            #     logger.info(f"Text: {row['text'][:100]}...")
             
             return similar_rows
         except Exception as e:
