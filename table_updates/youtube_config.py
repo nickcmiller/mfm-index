@@ -1,7 +1,7 @@
 CONFIG = {
     'channel_id': "UCyaN6mg5u8Cjy2ZI4ikWaug",
-    'start_date': "2024-05-01",
-    'end_date': "2024-05-25",
+    'start_date': "2024-07-25",
+    'end_date': "2024-08-1",
     'process_new_episodes': True,
     'speaker_replacement': True,
     'generate_embeddings': True,

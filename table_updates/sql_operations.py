@@ -94,9 +94,19 @@ def read_from_table_and_log(
 
             result = {'rows': rows}
 
-            if rows:
-                for row in rows:
-                    print(row['id'], row['title'])
+            # Deduplicate rows based on 'title' and keep the latest 'date_published'
+            unique_rows = {}
+            for row in rows:
+                title = row['title']
+                if title not in unique_rows or row['date_published'] > unique_rows[title]['date_published']:
+                    unique_rows[title] = {}
+                    unique_rows[title]['id'] = row['id']
+                    unique_rows[title]['title'] = row['title']
+                    unique_rows[title]['date_published'] = row['date_published']
+            
+            sorted_unique_rows = sorted(unique_rows.values(), key=lambda x: x['date_published'])
+            for row in sorted_unique_rows:
+                print(f"{row['date_published']} - {row['title']}")
 
             if not keep_embeddings:
                 non_embedding_rows = [{k: v for k, v in row.items() if k != 'embedding'} for row in rows]

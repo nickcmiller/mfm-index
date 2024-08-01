@@ -258,17 +258,25 @@ def retrieve_entries_by_date_range(
 if __name__ == "__main__":
     from genai_toolbox.helper_functions.string_helpers import retrieve_file, write_to_file
     import json
-
+    from dateutil import parser
     entries = retrieve_entries_by_date_range(
         bucket_name="aai_utterances_json",
-        start_date="2024-05-25",
-        end_date="2024-06-1"
+        start_date="2024-03-28",
+        end_date="2024-08-1"
     )
     print(f"Retrieved {len(entries)} entries from GCS")
-
-    write_to_file(
-        content=json.dumps(entries, indent=4),
-        file="speaker_replaced_utterances.json",
-        output_dir_name="tmp"
-    )
+    # Convert entries to include parsed dates for sorting
+    entries_with_dates = [
+        (parser.isoparse(entry['published']), entry) for entry in entries
+    ]
     
+    # Sort entries by the parsed date
+    sorted_entries = sorted(entries_with_dates, key=lambda x: x[0])
+
+    for _, entry in sorted_entries:
+        published_date = parser.isoparse(entry['published'])  # Corrected method name
+        day_with_suffix = f"{published_date.day}{'th' if 11 <= published_date.day <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(published_date.day % 10, 'th')}"
+        formatted_date = f"{published_date.strftime('%B')} {day_with_suffix}, {published_date.year}"
+        print(f"{formatted_date} - {entry['title']}")
+
+        
