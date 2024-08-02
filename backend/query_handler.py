@@ -158,7 +158,20 @@ def question_with_chat_state(
             - cosine_similarity_search: For searching the vector database.
             - single_question: For generating the final response.
     """
-    prompt = f"Question: {question}\n\nBased on this question and the prior messages, what question should I ask my vector database? Only use prior messages if they are relevant to the question. If prior questions are not relevant, just return the question as is."
+    prompt = f"""
+    Question: {question}\n\nBased on this question, what question should I ask my vector database? 
+    Only use prior messages if they are relevant to the question.
+    Example outputs:
+    ```
+    What is the relevance of encryption in regulation?
+    ```
+    ```
+    Who is Harry Potter?
+    ```
+    ```
+    How can I learn to swim?
+    ```
+    """
     question_system_instructions = "Return only the question to be asked. No formatting, just the question."
 
     chat_messages = chat_state[-5:][::-1] + [{"role": "user", "content": question}, {"role": "assistant", "content": "I will follow the instructions."}]
