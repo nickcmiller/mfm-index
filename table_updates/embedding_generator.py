@@ -53,8 +53,8 @@ async def process_entry(
     2. Embeds the utterances using OpenAI's embedding model
     3. Calculates similarity between consecutive utterances
     4. Consolidates similar utterances
-    5. Re-embeds the consolidated utterances
-    6. Adds metadata to the processed chunks
+    5. Adds metadata to the consolidated utterances
+    6. Re-embeds the consolidated utterances
 
     Args:
         entry (Dict): A dictionary containing podcast entry information. Expected keys:
@@ -119,21 +119,12 @@ async def process_entry(
         filtered_utterances, 
         similarity_threshold=consolidation_threshold
     )
-    
-    await update_stage("Embedding consolidated utterances")
-    consolidated_embeddings = await asyncio.to_thread(
-        embed_dict_list,
-        embedding_function=create_openai_embedding,
-        chunk_dicts=consolidated_similar_utterances, 
-        key_to_embed="text",
-        model_choice="text-embedding-3-large"
-    )
 
     await update_stage("Formatting times utterances")
-    formatted_utterances = format_speakers_in_utterances(consolidated_embeddings)
+    formatted_utterances = format_speakers_in_utterances(consolidated_similar_utterances)
     minutes_utterances = milliseconds_to_minutes_in_utterances(formatted_utterances)
     renamed_utterances = rename_start_end_to_ms(minutes_utterances)
-    
+
     await update_stage("Adding metadata")
     additional_metadata = {
         "title": f"{feed_title} - {episode_date}: {episode_title}",
@@ -144,22 +135,31 @@ async def process_entry(
         chunks=renamed_utterances,
         additional_metadata=additional_metadata
     )
+    
+    await update_stage("Embedding consolidated utterances")
+    consolidated_embeddings = await asyncio.to_thread(
+        embed_dict_list,
+        embedding_function=create_openai_embedding,
+        chunk_dicts=titled_utterances, 
+        key_to_embed="text",
+        model_choice="text-embedding-3-large"
+    )
 
     await update_stage("Creating YouTube links")
     if video_id:
-        for utterance in titled_utterances:
+        for utterance in consolidated_embeddings:
             start_seconds = utterance['start_ms'] // 1000
             utterance['youtube_link'] = f"https://www.youtube.com/watch?v={video_id}&t={start_seconds}s"
     
     await update_stage("Generating IDs")
-    for utterance in titled_utterances:
+    for utterance in consolidated_embeddings:
         start = utterance['start_ms']
         feed_regex = re.sub(r'[^a-zA-Z0-9\s]', '', feed_title)
         episode_regex = re.sub(r'[^a-zA-Z0-9\s]', '', episode_title)
         utterance['id'] = f"{start} {feed_regex} {episode_regex}".replace(' ', '-')
     
     await update_stage("Completed")
-    return titled_utterances
+    return consolidated_embeddings
 
 async def process_entry_async(entry: Dict, semaphore: Semaphore, pbar: tqdm) -> List[Dict]:
     async with semaphore:
@@ -223,7 +223,13 @@ def generate_embeddings(
     include_existing: bool = False,
     max_concurrent_tasks: int = 5
 ) -> List[Dict]:
-    return asyncio.run(generate_embeddings_async(embedding_config, include_existing, max_concurrent_tasks))
+    return asyncio.run(
+        generate_embeddings_async(
+            embedding_config, 
+            include_existing, 
+            max_concurrent_tasks
+        )
+    )
 
 if __name__ == "__main__":
     pass

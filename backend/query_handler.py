@@ -196,17 +196,22 @@ def question_with_chat_state(
     the database.
     """
     prompt = f"""
-    Question: {question}\n\nBased on this question, what question should I ask my vector database? 
-    Only use prior messages if they are relevant to the question.
-    Example outputs:
+    Request: {question}\n\nBased on this request, what request should I make to my vector database?
+    Only use prior messages if they are relevant to the question. 
+    If the question has a formatting request, ensure the formatting is requested. For example, if the user requests a list, provide a bullet point list.
+    Lengthen the request and include as many details as possible.
+    Example inputs and outputs:
     ```
-    What is the relevance of encryption in regulation?
+    Input: "What are the implications of data privacy laws?"
+    Output: "Given the recent passage of the DMA, what are the implications of data privacy laws for small businesses in the tech industry? Consider how this might affect data handling and compliance requirements."
     ```
     ```
-    Who is Harry Potter?
+    Input: "Summarize the latest podcast episode."
+    Output: "Provide a summary of the main themes in the latest podcast episode about climate change. Include the thoughts Casey Handmer shared on solar-powered carbon capture in his episode with Ben Thompson."
     ```
     ```
-    How can I learn to swim?
+    Input: "Make a list on best practices for managing remote teams."
+    Output: "Make a bullet point list of best practices for managing remote teams. Consider what ideas were shared by Matt Mullenweg and Jason Fried in their episodes."
     ```
     """
     question_system_instructions = "Return only the question to be asked. No formatting, just the question."

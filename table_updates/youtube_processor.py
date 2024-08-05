@@ -26,7 +26,12 @@ async def download_and_transcribe_multiple_episodes_by_date(
     retry_delay: float = 1.0,
     api_key: str = api_key
 ) -> List[Dict[str, str]]:
-    feed_entries = retrieve_youtube_channel_and_video_metadata_by_date(api_key, channel_id, start_date, end_date)
+    feed_entries = retrieve_youtube_channel_and_video_metadata_by_date(
+        api_key, 
+        channel_id, 
+        start_date, 
+        end_date
+    )
     logging.info(f"Downloading {len(feed_entries)} episodes")
 
     semaphore = Semaphore(max_concurrent_tasks)
@@ -74,8 +79,21 @@ async def process_stages(
     utterances_replaced_dir_name: Optional[str]
 ) -> Dict[str, str]:
     stages = [
-        ("Audio download", yt_dlp_download, entry['video_id'], audio_dir_name),
-        ("Summary generation", generate_episode_summary, entry['title'], entry['description'], entry['feed_keywords'], entry['feed_title'], entry['feed_description'] )
+        (
+            "Audio download", 
+            yt_dlp_download, 
+            entry['video_id'], 
+            audio_dir_name
+        ),
+        (
+            "Summary generation", 
+            generate_episode_summary, 
+            entry['title'], 
+            entry['description'], 
+            entry['feed_keywords'], 
+            entry['feed_title'], 
+            entry['feed_description'] 
+        )
     ]
 
     for stage_name, stage_func, *args in stages:
@@ -111,28 +129,6 @@ async def process_stages(
             logging.error(f"Error in stage {stage_name} for entry {entry['title']}: {str(e)}")
             logging.error(f"Entry state: {entry}")
             raise
-
-    # if 'utterances_dict' in entry:
-    #     try:
-    #         stage_name = "Utterances replacement"
-    #         logging.info(f"Starting {stage_name} for entry {entry['title']}")
-    #         result = await retry_stage(
-    #             stage_name, 
-    #             replace_speakers_in_assemblyai_utterances, 
-    #             entry, 
-    #             pbar, 
-    #             max_retries, 
-    #             retry_delay, 
-    #             entry['utterances_dict'], 
-    #             entry['summary_generation'], 
-    #             utterances_replaced_dir_name
-    #         )
-    #         entry['replaced_dict'] = result
-    #         logging.info(f"Completed {stage_name} for entry {entry['title']}")
-    #     except Exception as e:
-    #         logging.error(f"Error in stage {stage_name} for entry {entry['title']}: {str(e)}")
-    #         logging.error(f"Entry state: {entry}")
-    #         raise
 
     return entry
 

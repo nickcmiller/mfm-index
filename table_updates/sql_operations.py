@@ -89,6 +89,11 @@ def read_from_table_and_log(
         ensure_pgvector_extension(engine)
         try:
             rows = read_from_table(engine, table_name, include_embedding=keep_embeddings)
+
+            if not rows: 
+                logger.info(f"No data found in table '{table_name}'")
+                return {'rows': [], 'non_embedding_rows': []}
+
             logger.info(f"Read {len(rows)} rows from table '{table_name}'")
             logger.info(f"Available keys in the first row: {rows[0].keys()}")
 
@@ -106,7 +111,7 @@ def read_from_table_and_log(
             
             sorted_unique_rows = sorted(unique_rows.values(), key=lambda x: x['date_published'])
             for row in sorted_unique_rows:
-                print(f"{row['date_published']} - {row['title']}")
+                logger.info(f"{row['date_published']} - {row['title']}")
 
             if not keep_embeddings:
                 non_embedding_rows = [{k: v for k, v in row.items() if k != 'embedding'} for row in rows]
@@ -211,7 +216,7 @@ def load_and_process_data(
     data_object = aggregated_chunked_embeddings[0]
     filtered_data_object = {key: value for key, value in data_object.items() if key != 'embedding'}
     for key, value in filtered_data_object.items():
-        print(f"{key}: {type(value)}")
+        logger.info(f"{key}: {type(value)}")
     return aggregated_chunked_embeddings
 
 def main(
