@@ -165,12 +165,12 @@ def single_question(
         template_args=template_args,
         llm_model_order=[
             {
-                "provider": "anthropic", 
-                "model": "sonnet"
-            },
-            {
                 "provider": "openai", 
                 "model": "4o-mini"
+            },
+            {
+                "provider": "anthropic", 
+                "model": "sonnet"
             },
             {
                 "provider": "groq", 
