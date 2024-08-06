@@ -156,27 +156,30 @@ def single_question(
     source_template = "Title: {title} at [{start_mins}]({youtube_link})\nText: {text}"
     template_args = {"title": "title", "text": "text", "start_mins": "start_mins", "youtube_link": "youtube_link"}
 
-    print(f"\n\nQuestion: {question}\n\n")
+    fallback_model_order = [
+        {
+            "provider": "openai", 
+            "model": "4o-mini"
+        },
+        {
+            "provider": "anthropic", 
+            "model": "sonnet"
+        },
+        {
+            "provider": "groq", 
+            "model": "llama3.1-70b"
+        },
+    ]
+
+
+    print(f"\n\nQuestion: {question}\nModel: {fallback_model_order[0]['model']}\n\n")
     return stream_response_with_query(
         similar_chunks=similar_chunks,
         question=question,
         llm_system_prompt=llm_system_prompt,
         source_template=source_template,
         template_args=template_args,
-        llm_model_order=[
-            {
-                "provider": "openai", 
-                "model": "4o-mini"
-            },
-            {
-                "provider": "anthropic", 
-                "model": "sonnet"
-            },
-            {
-                "provider": "groq", 
-                "model": "llama3.1-70b"
-            },
-        ],
+        llm_model_order=fallback_model_order
     )
 
 def question_with_chat_state(
@@ -277,7 +280,7 @@ def question_with_chat_state(
         system_instructions=revision_system_instructions,
     )
 
-    logger.info(f"Revised question: {revised_question}")
+    logger.info(f"\n\nRevised question: {revised_question}\nModel: {fallback_model_order[0]['model']}\n\n")
 
     vectordb_question = fallback_text_response(
         prompt=vectordb_prompt,
@@ -285,7 +288,7 @@ def question_with_chat_state(
         history_messages=chat_messages,
         system_instructions=vectordb_system_instructions,
     )
-    logger.info(f"\n\nVector database question: {vectordb_question}\n\n")
+    logger.info(f"\n\nVector database question: {vectordb_question}\nModel: {fallback_model_order[0]['model']}\n\n")
 
     query_embedding = create_openai_embedding(
         text=vectordb_question, 
