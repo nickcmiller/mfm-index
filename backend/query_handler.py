@@ -58,6 +58,10 @@ def cosine_similarity_search(
             )
             logger.info(f"Returned {len(similar_rows)} rows from table '{table_name}' above threshold {similarity_threshold}")
 
+            if not similar_rows:
+                logger.warning(f"No similar rows found for the query embedding.")
+                return [] 
+
             max_similarity = max(row['similarity'] for row in similar_rows)
             filtered_rows = [row for row in similar_rows if max_similarity - row['similarity'] <= max_similarity_delta]
             filtered_rows = filtered_rows[:filter_limit]
@@ -111,30 +115,28 @@ def single_question(
             for chunk in response:
                 print(chunk, end='', flush=True)
     """
-    if not similar_chunks:
-        return {
-            "llm_response": "I'm sorry, but I don't have enough information to answer this question based on the available data.",
-            "similar_chunks": []
-        }
+    
+    # # Check if similar_chunks is None or empty
+    # if similar_chunks is None or len(similar_chunks) == 0:
+    #     yield "No relevant information available to answer the question."
 
     llm_system_prompt = """
     Use numbered references to cite sources with their titles.
     Record each reference in a markdown numbered list at the bottom with a timestamp and a link to the source.
-    Use the same number when a citation is reused.
-    Provide the answer in the format requested by the user. For example, if the user asks for a list, provide a bullet point or numbered list.
+    When a timestamp is reused, use the same number.
 
     Example 1: 
-    ```
+    '''
     Sentence using first source.[1] Sentence using second and third sources.[2][3]
 
    **References:**
     1. Source 1 Title at [0:32](https://youtube.com/watch?v=dQw4w9WgXcQ&t=32)
     2. Source 2 Title at [8:47](https://youtube.com/watch?v=oHg5SJYRHA0&t=527)
     3. Source 3 Title at [13:36](https://youtube.com/watch?v=xvFZjo5PgG0&t=816)
-    ```
+    '''
 
     Example 2: 
-    ```
+    '''
     Here's a list:
     - Sentence using first source.[1]
     - Sentence using second and third sources.[2][3]
@@ -144,9 +146,11 @@ def single_question(
     1. Source 1 Title at [0:32](https://youtube.com/watch?v=dQw4w9WgXcQ&t=32)
     2. Source 2 Title at [8:47](https://youtube.com/watch?v=oHg5SJYRHA0&t=527)
     3. Source 3 Title at [13:36](https://youtube.com/watch?v=xvFZjo5PgG0&t=816)
-    ```
-    
-    Provide a thorough, detailed, and comprehensive answer in paragraph form.
+    '''
+
+    Provide a thorough, detailed, and comprehensive answer.
+    If the sources are not relevant to the question, say that you couldn't find any relevant information.
+    Before using the sources, ensure that sources are using the same names as the ones in the chat history.
     """
 
     source_template = "Title: {title} at [{start_mins}]({youtube_link})\nText: {text}"
@@ -161,16 +165,16 @@ def single_question(
         template_args=template_args,
         llm_model_order=[
             {
+                "provider": "anthropic", 
+                "model": "sonnet"
+            },
+            {
                 "provider": "openai", 
                 "model": "4o-mini"
             },
             {
                 "provider": "groq", 
                 "model": "llama3.1-70b"
-            },
-            {
-                "provider": "anthropic", 
-                "model": "sonnet"
             },
         ],
     )
@@ -214,69 +218,70 @@ def question_with_chat_state(
 
     revision_prompt = f"""
         Question: {question}
-        Rewrite the question using <chat history> to identify the intent of the question, the people referenced by the question, and ideas / topics / themes targeted by the question in <chat history>.
-        
-        Example
-        ---
-        Input: ```What are his best ideas?```
-        Output: ```What are <person's name>'s best idea about <topic mentioned in chat history>? Consider how this might affect areas mentioned in <a prior chat answer>.```
-        ---
+        When possible, rewrite the question using <chat history> to identify the intent of the question, the people referenced by the question, and ideas / topics / themes targeted by the question in <chat history>.
+        If the <chat history> does not contain any information about the people, ideas, or topics relevant to the question, then do not make any assumptions.
+        Only return the request. Don't preface it or provide an introductory message.
     """
 
-    revision_system_instructions = "You are an assistant that concisely rewrites questions. <brackets> are telling you to refer to the chat history. Don't use brackets in your response."
+    # ---
+    #     Example
+    #     ---
+    #     '''What are his best ideas?'''
+    #     becomes
+    #     '''What are <person's name>'s best idea about <topic mentioned in chat history>? Consider how this might affect areas mentioned in <a prior chat answer>.'''
+    #     ---
+
+    revision_system_instructions = "You are an assistant that concisely and carefully rewrites questions. The less than (<) and greater than (>) signs are telling you to refer to the chat history. Don't use < or > in your response."
 
     vectordb_prompt = f"""
         Request: {question}\n\nBased on this request, what request should I make to my vector database?
         Use prior messages to establish the intent and context of the question. 
-        Use the chat history to identify people who are in the request.
-        Lengthen the request and include as many contextual details as possible.
-        ---
-        Example inputs and outputs:
-        
-        Input Text:
-        ```
-        What are the implications of data privacy laws?
-        ```
-        Generated Output: 
-        ```
-        Given the context of the <prior person, topic, or theme in chat history>, what are the implications of data privacy laws for <topic mentioned in chat history>? Consider how this might affect areas mentioned in <a prior chat answer>.
-        ```
-        Input Text:
-        ```
-        Summarize the latest podcast episode.
-        ```
-        Generated Output: 
-        ```
-        Provide a summary of the main themes in the latest podcast episode about <topic mentioned in chat history>. 
-        Include the thoughts by the speaker referenced in <chat history>.
-        Explain <idea mentioned in chat history> more thoroughly.
-        ```
-        Input Text:
-        ```
-        Make a list on best practices for managing remote teams.
-        ```
-        Generated Output: 
-        ```
-        - Make a bullet point list of best practices for managing remote teams.
-        - Consider what ideas were shared in <chat history>.
-        - This is relevant to <topic mentioned in chat history>.
-        ```
-        ---
+        Include any relevant topics, themes, or individuals mentioned in the chat history. 
+        Significantly lengthen the request and include as many contextual details as possible to enhance the relevance of the query.
+        Only return the request. Don't preface it or provide an introductory message.
     """
-    vectordb_system_instructions = "<brackets> are telling you to refer to the chat history."
 
-    revised_question = openai_text_response(
+    # Examples below within quotes
+    #     ---
+    #     Original Question: "What are the implications of data privacy laws?"
+    #     New Question: "Considering the discussions about <specific data privacy topics or incidents> in prior messages, what are the implications of data privacy laws for <specific context or industry>? Include references to <related chat history details or previous discussions>."
+
+    #     Original Question: "Summarize the latest podcast episode."
+    #     New Question: "Provide a detailed summary of the main themes discussed in the latest podcast episode about <specific topic>. Include insights from <mentioned speaker> and relate it to <related discussion or theme in chat history>. Explain how <specific idea or concept> was elaborated in the episode."
+
+    #     Original Question: "Make a list on best practices for managing remote teams."
+    #     New Question: "Create a comprehensive list of best practices for managing remote teams. Consider the strategies discussed in <related prior messages>. This list should include methods that address <specific challenges or themes mentioned previously>."
+    #     ---
+
+    vectordb_system_instructions = "You expand on questions asked to a vector database containing chunks of transcripts. You add sub-questions and contextual details to make the query more specific and relevant to the chat history."
+
+    fallback_model_order = [
+        {
+            "provider": "openai", 
+            "model": "4o-mini"
+        },
+        {
+            "provider": "groq", 
+            "model": "llama3.1-70b"
+        },  
+        {
+            "provider": "anthropic", 
+            "model": "sonnet"
+        }
+    ]  
+
+    revised_question = fallback_text_response(
         prompt=revision_prompt,
-        model_choice="4o-mini",
+        model_order=fallback_model_order,
         history_messages=chat_messages,
         system_instructions=revision_system_instructions,
     )
 
-   
-    logger.info(f"Chat messages: {chat_messages}")
-    vectordb_question = openai_text_response(
+    logger.info(f"Revised question: {revised_question}")
+
+    vectordb_question = fallback_text_response(
         prompt=vectordb_prompt,
-        model_choice="4o-mini",
+        model_order=fallback_model_order,
         history_messages=chat_messages,
         system_instructions=vectordb_system_instructions,
     )
