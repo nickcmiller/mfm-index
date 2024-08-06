@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional, List
 from google.cloud.exceptions import NotFound
 from genai_toolbox.helper_functions.datetime_helpers import get_date_with_timezone
 from datetime import datetime
+from dateutil import parser
+from datetime import timezone
 
 logging.basicConfig(level=logging.INFO)
 
@@ -288,8 +290,6 @@ def retrieve_entries_by_date_range(
 if __name__ == "__main__":
     from genai_toolbox.helper_functions.string_helpers import retrieve_file, write_to_file
     import json
-    from dateutil import parser
-    from datetime import timezone
 
     # index_list = retrieve_index_list_from_gcs(
     #     bucket_name="aai_utterances_json",
@@ -304,11 +304,16 @@ if __name__ == "__main__":
     # print(json.dumps(filtered_index, indent=4))
     entries = retrieve_entries_by_date_range(
         bucket_name="aai_utterances_json",
-        start_date="2024-05-28",
-        end_date="2024-08-1"
+        start_date="2024-02-1",
+        end_date="2024-06-1"
     )
     print(f"Retrieved {len(entries)} entries from GCS")
+    output_file_path = "tmp/speaker_replaced_utterances.json"
+    with open(output_file_path, 'w') as output_file:
+        json.dump(entries, output_file, indent=4)
+    print(f"Successfully wrote {len(entries)} entries to {output_file_path}")
     # Convert entries to include parsed dates for sorting
+
     entries_with_dates = [
         (parser.isoparse(entry['published']), entry) for entry in entries
     ]
@@ -318,6 +323,8 @@ if __name__ == "__main__":
         day_with_suffix = f"{published_date.day}{'th' if 11 <= published_date.day <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(published_date.day % 10, 'th')}"
         formatted_date = f"{published_date.strftime('%B')} {day_with_suffix}, {published_date.year}"
         print(f"{formatted_date} - {entry['title']}")
+
+
     
 
-        
+

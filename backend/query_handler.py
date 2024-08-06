@@ -121,10 +121,24 @@ def single_question(
     Use numbered references to cite sources with their titles.
     Record each reference in a markdown numbered list at the bottom with a timestamp and a link to the source.
     Use the same number when a citation is reused.
+    Provide the answer in the format requested by the user. For example, if the user asks for a list, provide a bullet point or numbered list.
 
-    Example: 
+    Example 1: 
     ```
     Sentence using first source.[1] Sentence using second and third sources.[2][3]
+
+   **References:**
+    1. Source 1 Title at [0:32](https://youtube.com/watch?v=dQw4w9WgXcQ&t=32)
+    2. Source 2 Title at [8:47](https://youtube.com/watch?v=oHg5SJYRHA0&t=527)
+    3. Source 3 Title at [13:36](https://youtube.com/watch?v=xvFZjo5PgG0&t=816)
+    ```
+
+    Example 2: 
+    ```
+    Here's a list:
+    - Sentence using first source.[1]
+    - Sentence using second and third sources.[2][3]
+    - Sentence using first and third sources.[1][3]
 
    **References:**
     1. Source 1 Title at [0:32](https://youtube.com/watch?v=dQw4w9WgXcQ&t=32)
@@ -138,6 +152,7 @@ def single_question(
     source_template = "Title: {title} at [{start_mins}]({youtube_link})\nText: {text}"
     template_args = {"title": "title", "text": "text", "start_mins": "start_mins", "youtube_link": "youtube_link"}
 
+    print(f"\n\nQuestion: {question}\n\n")
     return stream_response_with_query(
         similar_chunks=similar_chunks,
         question=question,
@@ -166,67 +181,111 @@ def question_with_chat_state(
     table_name: str
 ) -> Generator[str, None, None]:
     """
-    Generates a revised question based on the user's input question and the chat state.
+        Generates a revised question based on the user's input question and the chat state.
 
-    This function takes a user-provided question and the current chat state (a list of previous messages) 
-    to formulate a more precise question that can be used to query a vector database. 
+        This function takes a user-provided question and the current chat state (a list of previous messages) 
+        to formulate a more precise question that can be used to query a vector database. 
 
-    Parameters:
-    - question (str): The original question posed by the user.
-    - chat_state (List[Dict]): A list of dictionaries representing the chat history, where each dictionary 
-      contains a 'role' (either 'user' or 'assistant') and 'content' (the message text).
-    - table_name (str): The name of the database table to be queried.
+        Parameters:
+        - question (str): The original question posed by the user.
+        - chat_state (List[Dict]): A list of dictionaries representing the chat history, where each dictionary 
+        contains a 'role' (either 'user' or 'assistant') and 'content' (the message text).
+        - table_name (str): The name of the database table to be queried.
 
-    Returns:
-    - Generator[str, None, None]: A generator that yields strings, which are the responses from the 
-      database query based on the revised question.
+        Returns:
+        - Generator[str, None, None]: A generator that yields strings, which are the responses from the 
+        database query based on the revised question.
 
-    The function constructs a prompt that instructs the model to generate a question suitable for querying 
-    the vector database. It utilizes the last five messages from the chat state to provide context, 
-    ensuring that only relevant prior messages are considered. The function logs the chat messages and 
-    the revised question for debugging purposes.
+        The function constructs a prompt that instructs the model to generate a question suitable for querying 
+        the vector database. It utilizes the last five messages from the chat state to provide context, 
+        ensuring that only relevant prior messages are considered. The function logs the chat messages and 
+        the revised question for debugging purposes.
 
-    The revised question is then used to create an embedding, which is subsequently used to perform a 
-    cosine similarity search against the specified database table. The results of this search are streamed 
-    back to the user.
+        The revised question is then used to create an embedding, which is subsequently used to perform a 
+        cosine similarity search against the specified database table. The results of this search are streamed 
+        back to the user.
 
-    Example:
-    If the user asks, "What are the implications of data privacy laws?", the function may revise this 
-    to a more specific question like "How do data privacy laws affect small businesses?" before querying 
-    the database.
+        Example:
+        If the user asks, "What are the implications of data privacy laws?", the function may revise this 
+        to a more specific question like "How do data privacy laws affect small businesses?" before querying 
+        the database.
     """
-    prompt = f"""
-    Request: {question}\n\nBased on this request, what request should I make to my vector database?
-    Only use prior messages if they are relevant to the question. 
-    If the question has a formatting request, ensure the formatting is requested. For example, if the user requests a list, provide a bullet point list.
-    Lengthen the request and include as many details as possible.
-    Example inputs and outputs:
-    ```
-    Input: "What are the implications of data privacy laws?"
-    Output: "Given the recent passage of the DMA, what are the implications of data privacy laws for small businesses in the tech industry? Consider how this might affect data handling and compliance requirements."
-    ```
-    ```
-    Input: "Summarize the latest podcast episode."
-    Output: "Provide a summary of the main themes in the latest podcast episode about climate change. Include the thoughts Casey Handmer shared on solar-powered carbon capture in his episode with Ben Thompson."
-    ```
-    ```
-    Input: "Make a list on best practices for managing remote teams."
-    Output: "Make a bullet point list of best practices for managing remote teams. Consider what ideas were shared by Matt Mullenweg and Jason Fried in their episodes."
-    ```
-    """
-    question_system_instructions = "Return only the question to be asked. No formatting, just the question."
-
     chat_messages = chat_state[-5:][::-1] + [{"role": "user", "content": question}, {"role": "assistant", "content": "I will follow the instructions."}]
-    logger.info(f"Chat messages: {chat_messages}")
+
+    revision_prompt = f"""
+        Question: {question}
+        Rewrite the question using <chat history> to identify the intent of the question, the people referenced by the question, and ideas / topics / themes targeted by the question in <chat history>.
+        
+        Example
+        ---
+        Input: ```What are his best ideas?```
+        Output: ```What are <person's name>'s best idea about <topic mentioned in chat history>? Consider how this might affect areas mentioned in <a prior chat answer>.```
+        ---
+    """
+
+    revision_system_instructions = "You are an assistant that concisely rewrites questions. <brackets> are telling you to refer to the chat history. Don't use brackets in your response."
+
+    vectordb_prompt = f"""
+        Request: {question}\n\nBased on this request, what request should I make to my vector database?
+        Use prior messages to establish the intent and context of the question. 
+        Use the chat history to identify people who are in the request.
+        Lengthen the request and include as many contextual details as possible.
+        ---
+        Example inputs and outputs:
+        
+        Input Text:
+        ```
+        What are the implications of data privacy laws?
+        ```
+        Generated Output: 
+        ```
+        Given the context of the <prior person, topic, or theme in chat history>, what are the implications of data privacy laws for <topic mentioned in chat history>? Consider how this might affect areas mentioned in <a prior chat answer>.
+        ```
+        Input Text:
+        ```
+        Summarize the latest podcast episode.
+        ```
+        Generated Output: 
+        ```
+        Provide a summary of the main themes in the latest podcast episode about <topic mentioned in chat history>. 
+        Include the thoughts by the speaker referenced in <chat history>.
+        Explain <idea mentioned in chat history> more thoroughly.
+        ```
+        Input Text:
+        ```
+        Make a list on best practices for managing remote teams.
+        ```
+        Generated Output: 
+        ```
+        - Make a bullet point list of best practices for managing remote teams.
+        - Consider what ideas were shared in <chat history>.
+        - This is relevant to <topic mentioned in chat history>.
+        ```
+        ---
+    """
+    vectordb_system_instructions = "<brackets> are telling you to refer to the chat history."
+
     revised_question = openai_text_response(
-        prompt=prompt,
+        prompt=revision_prompt,
         model_choice="4o-mini",
         history_messages=chat_messages,
-        system_instructions=question_system_instructions,
+        system_instructions=revision_system_instructions,
     )
-    logger.info(f"\n\nRevised question: {revised_question}\n\n")
 
-    query_embedding = create_openai_embedding(text=revised_question, model_choice="text-embedding-3-large")
+   
+    logger.info(f"Chat messages: {chat_messages}")
+    vectordb_question = openai_text_response(
+        prompt=vectordb_prompt,
+        model_choice="4o-mini",
+        history_messages=chat_messages,
+        system_instructions=vectordb_system_instructions,
+    )
+    logger.info(f"\n\nVector database question: {vectordb_question}\n\n")
+
+    query_embedding = create_openai_embedding(
+        text=vectordb_question, 
+        model_choice="text-embedding-3-large"
+    )
     similar_chunks = cosine_similarity_search(
         table_name=table_name, 
         query_embedding=query_embedding,
