@@ -26,6 +26,25 @@ from httpx import HTTPStatusError
 load_dotenv()
 
 class HTTPXFilter(logging.Filter):
+    """
+        The HTTPXFilter class is a custom logging filter that is designed to control the logging output 
+        of HTTP requests made using the httpx library. It inherits from the logging.Filter class and 
+        overrides the filter method to selectively allow or block log records based on specific criteria.
+
+        Attributes:
+            first_request (bool): A flag that indicates whether the first HTTP request has been logged. 
+                                It is initialized to True.
+
+        Methods:
+            filter(record): This method checks if the log record contains the string 'HTTP Request:'. 
+                            If it does and it's the first request, the method allows the record to be logged 
+                            and sets the first_request flag to False. For subsequent requests, it blocks 
+                            the log record from being logged. If the log record does not contain the 
+                            specified string, it allows the record to be logged.
+
+        This class is useful for reducing log clutter by only logging the first HTTP request, which can 
+        help in debugging and monitoring HTTP interactions without overwhelming the log output.
+    """
     def __init__(self):
         super().__init__()
         self.first_request = True
@@ -48,40 +67,44 @@ async def process_entry(
     per_worker_rate_limit: int = 1000
 ) -> List[Dict]:
     """
-        Process a single podcast entry asynchronously.
+        Processes a single entry from the feed, performing various operations such as 
+        converting speakers, embedding utterances, processing similarities, consolidating 
+        utterances, formatting times, and adding metadata.
 
-        This function performs several operations on a podcast entry:
-        1. Converts speaker information in utterances
-        2. Embeds the utterances using OpenAI's embedding model
-        3. Calculates similarity between consecutive utterances
-        4. Consolidates similar utterances
-        5. Adds metadata to the consolidated utterances
-        6. Re-embeds the consolidated utterances
+        Function Dependencies:
+            - convert_utterance_speaker_to_speakers
+            - embed_dict_list_async
+            - add_similarity_to_next_dict_item
+            - consolidate_similar_utterances
+            - format_speakers_in_utterances
+            - milliseconds_to_minutes_in_utterances
+            - rename_start_end_to_ms
+            - add_metadata_to_chunks
 
         Args:
-            entry (Dict): A dictionary containing podcast entry information. Expected keys:
-                - 'feed_title' (str): The title of the podcast feed
-                - 'title' (str): The title of the specific episode
-                - 'published' (str): The publication date of the episode
-                - 'replaced_dict' (Dict): A dictionary containing:
-                    - 'transcribed_utterances' (List[Dict]): A list of utterance dictionaries
-            consolidation_threshold (float, optional): Threshold for consolidating similar utterances. Defaults to 0.35.
-            pbar (tqdm, optional): Progress bar object for updating processing status. Defaults to None.
+            entry (Dict): A dictionary containing the entry data, which includes:
+                - feed_title (str): The title of the feed.
+                - title (str): The title of the episode.
+                - published (str): The published date of the episode.
+                - replaced_dict (Dict): A dictionary containing transcribed utterances.
+                - video_id (str, optional): The ID of the video, if available.
+            consolidation_threshold (float, optional): The threshold for consolidating 
+                similar utterances. Default is 0.35.
+            pbar (tqdm, optional): A progress bar instance for tracking progress.
+            per_worker_rate_limit (int, optional): The rate limit for embedding requests 
+                per worker. Default is 1000.
 
         Returns:
-            List[Dict]: A list of dictionaries containing the processed and embedded utterances with metadata.
-            Each dictionary in the list is expected to have the following keys:
-                - 'text' (str): The consolidated utterance text
-                - 'speakers' (List[str]): List of speakers in the utterance
-                - 'start_ms' (int): Start time of the utterance in milliseconds
-                - 'end_ms' (int): End time of the utterance in milliseconds
-                - 'embedding' (List[float]): The embedding vector for the utterance
-                - 'title' (str): The title of the episode including feed title, date, and episode title
-                - 'publisher' (str): The title of the podcast feed
-                - 'publish_date' (str): The publication date of the episode
+            List[Dict]: A list of dictionaries representing the processed and consolidated 
+            utterances, each containing the relevant metadata and embeddings.
 
         Raises:
-            Any exceptions raised by the underlying functions are not caught here and will propagate up.
+            Exception: Raises an exception if any processing step fails, which can be 
+            caught and handled by the calling function.
+
+        This function is designed to be used in an asynchronous context and should be 
+        awaited when called. It utilizes various helper functions to perform specific 
+        tasks, ensuring modularity and reusability of code.
     """
     
     feed_title = entry['feed_title']
@@ -169,6 +192,21 @@ async def process_entry_async(
     pbar: tqdm,
     per_worker_rate_limit: int = 1000
 ) -> List[Dict]:
+    """
+        Processes a single entry asynchronously, updating the progress bar and logging the processing time.
+
+        Function Dependencies:
+            - process_entry
+
+        Args:
+            entry (Dict): The entry to be processed, expected to contain at least a 'title' key.
+            semaphore (Semaphore): A semaphore to limit the number of concurrent tasks.
+            pbar (tqdm): A progress bar instance to update the processing status.
+            per_worker_rate_limit (int): The rate limit for processing per worker.
+
+        Returns:
+            List[Dict]: The result of processing the entry, or None if an error occurred.
+    """
     async with semaphore:
         try:
             start_time = time.time()
@@ -191,6 +229,15 @@ async def process_entry_async(
 def load_existing_dicts(
     embedding_config: Dict
 ) -> List[Dict]:
+    """
+        Loads existing dictionaries from a file and returns them.
+
+        Args:
+            embedding_config (Dict): A dictionary containing configuration details for loading existing dictionaries.
+
+        Returns:
+            List[Dict]: A list of dictionaries loaded from the file.
+    """
     try:
         return retrieve_file(
             file=embedding_config['existing_embeddings_file'], 
@@ -205,6 +252,30 @@ async def generate_embeddings_async(
     include_existing: bool = False,
     max_concurrent_tasks: int = 5
 ) -> List[Dict]:
+    """
+        Asynchronously generates embeddings for a list of entries based on the provided configuration.
+
+        Function Dependencies:
+            - process_entry_async
+            - retrieve_file
+            - write_to_file
+
+        Args:
+            embedding_config (Dict): A dictionary containing configuration details for generating embeddings, 
+                including input file paths and output file names.
+            include_existing (bool, optional): A flag indicating whether to include existing embeddings in the 
+                processing. Default is False.
+            max_concurrent_tasks (int, optional): The maximum number of concurrent tasks to run for processing 
+                entries. Default is 5.
+
+        Returns:
+            List[Dict]: A list of dictionaries containing the generated embeddings for each entry processed. 
+                If an error occurs during processing, an empty list is returned.
+
+        This function retrieves the input data from the specified file, processes each entry asynchronously 
+        while respecting the rate limits, and writes the results to an output file. It utilizes a semaphore 
+        to limit the number of concurrent tasks and a progress bar to track the processing status.
+    """
     feed_dict = retrieve_file(
         file=embedding_config['input_file'],
         dir_name=embedding_config['input_dir']
@@ -243,6 +314,36 @@ def generate_embeddings(
     include_existing: bool = False,
     max_concurrent_tasks: int = 15
 ) -> List[Dict]:
+    """
+        Generates embeddings for a set of entries based on the provided configuration.
+
+        This function serves as a wrapper for the asynchronous function 
+        `generate_embeddings_async`, allowing it to be called in a synchronous context. 
+        It retrieves the input data from the specified file, processes each entry 
+        asynchronously while respecting the rate limits, and writes the results 
+        to an output file.
+
+        Function Dependencies:
+            - generate_embeddings_async
+
+        Args:
+            embedding_config (Dict): A dictionary containing configuration settings 
+                for generating embeddings, including input file paths and other 
+                necessary parameters.
+            include_existing (bool, optional): A flag indicating whether to include 
+                existing embeddings in the processing. Default is False.
+            max_concurrent_tasks (int, optional): The maximum number of concurrent 
+                tasks to run for processing entries. Default is 15.
+
+        Returns:
+            List[Dict]: A list of dictionaries containing the generated embeddings 
+                for each entry processed. If an error occurs during processing, 
+                an empty list is returned.
+
+        This function is designed to be used in a synchronous context and should 
+        be called when you want to generate embeddings for a set of entries. 
+        It utilizes asyncio to run the asynchronous processing in a blocking manner.
+    """
     return asyncio.run(
         generate_embeddings_async(
             embedding_config, 
@@ -250,6 +351,3 @@ def generate_embeddings(
             max_concurrent_tasks
         )
     )
-
-if __name__ == "__main__":
-    pass
