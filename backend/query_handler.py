@@ -1,6 +1,7 @@
 import os
 import logging
 from typing import List, Dict, Any, Generator
+import time
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -19,8 +20,6 @@ def cosine_similarity_search(
     query_embedding, 
     read_limit=15,
     similarity_threshold=0.30,
-    filter_limit=10,
-    max_similarity_delta=0.075,
     config=config
 ) -> List[Dict[str, Any]]:
     """
@@ -48,6 +47,7 @@ def cosine_similarity_search(
     with get_db_engine(config) as engine:
         logger.info(f"Connected to database: {engine}")
         try:
+            start_time = time.time()
             similar_rows = read_similar_rows(
                 engine, 
                 table_name, 
@@ -56,69 +56,102 @@ def cosine_similarity_search(
                 limit=read_limit,
                 similarity_threshold=similarity_threshold
             )
-            logger.info(f"Returned {len(similar_rows)} rows from table '{table_name}' above threshold {similarity_threshold}")
+            time_taken = time.time() - start_time
+            logger.info(f"Returned {len(similar_rows)} rows from table '{table_name}' above threshold {similarity_threshold} in {time_taken:.2f} seconds")
 
             if not similar_rows:
                 logger.warning(f"No similar rows found for the query embedding.")
                 return [] 
 
-            max_similarity = max(row['similarity'] for row in similar_rows)
-            filtered_rows = [row for row in similar_rows if max_similarity - row['similarity'] <= max_similarity_delta]
-            filtered_rows = filtered_rows[:filter_limit]
-            logger.info(f"Filtered down to {len(filtered_rows)} rows within {max_similarity_delta} of the highest similarity score: {max_similarity}")
-
-            for row in filtered_rows:
-                logger.info(f"Similarity: {row['similarity']} - {row['title']} {row['start_mins']}")
-            
-            return filtered_rows
+            return similar_rows
         except Exception as e:
             logger.error(f"Failed to perform cosine similarity search: {e}", exc_info=True)
             raise
 
-def single_question(
+def retrieve_similar_chunks(
+    table_name: str, 
+    question: str,
+    chat_messages: List[Dict] = [],
+    filter_limit=10,
+    max_similarity_delta=0.075,
+) -> List[Dict]:
+    try:
+        vectordb_question = _generate_vectordb_question(
+            question=question,
+            chat_messages=chat_messages
+        )
+        query_embedding = create_openai_embedding(
+            text=vectordb_question, 
+            model_choice="text-embedding-3-large"
+        )
+    except Exception as e:
+        logger.error(f"Failed to create query embedding: {e}", exc_info=True)
+        raise
+
+    filtered_rows = []
+    
+    try:
+        similar_rows = cosine_similarity_search(
+            table_name=table_name, 
+            query_embedding=query_embedding,
+        )
+
+        max_similarity = max(row['similarity'] for row in similar_rows)
+        filtered_rows = [row for row in similar_rows if max_similarity - row['similarity'] <= max_similarity_delta]
+        filtered_rows = filtered_rows[:filter_limit]
+        logger.info(f"Filtered down to {len(filtered_rows)} rows within {max_similarity_delta} of the highest similarity score: {max_similarity}")
+
+        for row in filtered_rows:
+            logger.info(f"Similarity: {row['similarity']} - {row['title']} {row['start_mins']}")
+    except Exception as e:
+        logger.error(f"Failed to perform cosine similarity search: {e}", exc_info=True)
+        raise
+
+    return filtered_rows
+
+def _generate_vectordb_question(
+    chat_messages: List[Dict], 
+    question: str
+) -> str:
+    vectordb_prompt = f"""
+        Request: {question}\n\nBased on this request, what request should I make to my vector database?
+        Use prior messages to establish the intent and context of the question. 
+        Include any relevant topics, themes, or individuals mentioned in the chat history. 
+        Significantly lengthen the request and include as many contextual details as possible to enhance the relevance of the query.
+        Only return the request. Don't preface it or provide an introductory message.
+    """
+    vectordb_system_instructions = "You expand on questions asked to a vector database containing chunks of transcripts. You add sub-questions and contextual details to make the query more specific and relevant to the chat history."
+
+    fallback_model_order = [
+        {
+            "provider": "groq", 
+            "model": "llama3.1-70b"
+        }, 
+        {
+            "provider": "openai", 
+            "model": "4o-mini"
+        },
+        {
+            "provider": "anthropic", 
+            "model": "sonnet"
+        }
+    ]  
+
+    start_time = time.time()
+    vectordb_question = fallback_text_response(
+        prompt=vectordb_prompt,
+        model_order=fallback_model_order,
+        history_messages=chat_messages,
+        system_instructions=vectordb_system_instructions,
+    )
+    time_taken = time.time() - start_time
+    logger.info(f"Vector database question: {vectordb_question}\nModel: {fallback_model_order[0]['model']}\n Vectordb time taken: {time_taken:.2f} seconds\n")
+    return vectordb_question
+    
+def stream_question_response(
     question: str, 
     similar_chunks: List[Dict]
 ) -> Generator[str, None, None]:
-    """
-        Generates a response to a single question based on the provided similar chunks of data.
-
-        This function takes a user question and a list of similar chunks retrieved from a database. It constructs a 
-        system prompt for a language model (LLM) to generate a comprehensive answer that cites the sources of the 
-        information used. The function formats the response to include numbered references to the sources, which 
-        are listed at the end of the answer with their respective timestamps and links.
-
-        Args:
-            question (str): The question posed by the user that needs to be answered.
-            similar_chunks (List[Dict]): A list of dictionaries containing similar data chunks that are relevant to 
-                                        the question. Each dictionary should include fields such as 'title', 
-                                        'text', 'start_mins', and 'youtube_link'.
-
-        Yields:
-            Generator[str, None, None]: A generator that yields the response from the LLM as it is being generated.
-
-        Returns:
-            dict: A dictionary containing the LLM's response and the list of similar chunks used to generate the 
-                response. If no similar chunks are provided, it returns a default message indicating insufficient 
-                information.
-
-        Raises:
-            Exception: If there is an error during the generation of the response or if the input data is not 
-                    formatted correctly.
-
-        Example:
-            question = "What are the key insights from the podcast?"
-            similar_chunks = [
-                {"title": "Episode 1", "text": "Insight about topic A.", "start_mins": "0:10", "youtube_link": "https://youtube.com/watch?v=example1"},
-                {"title": "Episode 2", "text": "Insight about topic B.", "start_mins": "1:20", "youtube_link": "https://youtube.com/watch?v=example2"}
-            ]
-            response = single_question(question, similar_chunks)
-            for chunk in response:
-                print(chunk, end='', flush=True)
-    """
-    
-    # # Check if similar_chunks is None or empty
-    # if similar_chunks is None or len(similar_chunks) == 0:
-    #     yield "No relevant information available to answer the question."
 
     llm_system_prompt = """
     Use numbered references to cite sources with their titles.
@@ -184,123 +217,60 @@ def single_question(
 
 def question_with_chat_state(
     question: str, 
-    chat_state: List[Dict], 
+    chat_state: List[Dict],
     table_name: str
-) -> Generator[str, None, None]:
-    """
-        Generates a revised question based on the user's input question and the chat state.
+) -> Generator[str, None, None]:    
 
-        This function takes a user-provided question and the current chat state (a list of previous messages) 
-        to formulate a more precise question that can be used to query a vector database. 
+    similar_chunks = retrieve_similar_chunks(
+        table_name=table_name, 
+        question=question,
+        chat_messages=chat_state
+    )
 
-        Parameters:
-        - question (str): The original question posed by the user.
-        - chat_state (List[Dict]): A list of dictionaries representing the chat history, where each dictionary 
-        contains a 'role' (either 'user' or 'assistant') and 'content' (the message text).
-        - table_name (str): The name of the database table to be queried.
+    revised_question = _generate_revised_question(chat_state, question)
 
-        Returns:
-        - Generator[str, None, None]: A generator that yields strings, which are the responses from the 
-        database query based on the revised question.
+    return stream_question_response(
+        question=revised_question, 
+        similar_chunks=similar_chunks
+    )
 
-        The function constructs a prompt that instructs the model to generate a question suitable for querying 
-        the vector database. It utilizes the last five messages from the chat state to provide context, 
-        ensuring that only relevant prior messages are considered. The function logs the chat messages and 
-        the revised question for debugging purposes.
-
-        The revised question is then used to create an embedding, which is subsequently used to perform a 
-        cosine similarity search against the specified database table. The results of this search are streamed 
-        back to the user.
-
-        Example:
-        If the user asks, "What are the implications of data privacy laws?", the function may revise this 
-        to a more specific question like "How do data privacy laws affect small businesses?" before querying 
-        the database.
-    """
-    chat_messages = chat_state[-5:][::-1] + [{"role": "user", "content": question}, {"role": "assistant", "content": "I will follow the instructions."}]
-
+def _generate_revised_question(
+    chat_messages: List[Dict], 
+    question: str
+) -> str:
     revision_prompt = f"""
         Question: {question}
         When possible, rewrite the question using <chat history> to identify the intent of the question, the people referenced by the question, and ideas / topics / themes targeted by the question in <chat history>.
         If the <chat history> does not contain any information about the people, ideas, or topics relevant to the question, then do not make any assumptions.
         Only return the request. Don't preface it or provide an introductory message.
     """
-
-    # ---
-    #     Example
-    #     ---
-    #     '''What are his best ideas?'''
-    #     becomes
-    #     '''What are <person's name>'s best idea about <topic mentioned in chat history>? Consider how this might affect areas mentioned in <a prior chat answer>.'''
-    #     ---
-
     revision_system_instructions = "You are an assistant that concisely and carefully rewrites questions. The less than (<) and greater than (>) signs are telling you to refer to the chat history. Don't use < or > in your response."
 
-    vectordb_prompt = f"""
-        Request: {question}\n\nBased on this request, what request should I make to my vector database?
-        Use prior messages to establish the intent and context of the question. 
-        Include any relevant topics, themes, or individuals mentioned in the chat history. 
-        Significantly lengthen the request and include as many contextual details as possible to enhance the relevance of the query.
-        Only return the request. Don't preface it or provide an introductory message.
-    """
-
-    # Examples below within quotes
-    #     ---
-    #     Original Question: "What are the implications of data privacy laws?"
-    #     New Question: "Considering the discussions about <specific data privacy topics or incidents> in prior messages, what are the implications of data privacy laws for <specific context or industry>? Include references to <related chat history details or previous discussions>."
-
-    #     Original Question: "Summarize the latest podcast episode."
-    #     New Question: "Provide a detailed summary of the main themes discussed in the latest podcast episode about <specific topic>. Include insights from <mentioned speaker> and relate it to <related discussion or theme in chat history>. Explain how <specific idea or concept> was elaborated in the episode."
-
-    #     Original Question: "Make a list on best practices for managing remote teams."
-    #     New Question: "Create a comprehensive list of best practices for managing remote teams. Consider the strategies discussed in <related prior messages>. This list should include methods that address <specific challenges or themes mentioned previously>."
-    #     ---
-
-    vectordb_system_instructions = "You expand on questions asked to a vector database containing chunks of transcripts. You add sub-questions and contextual details to make the query more specific and relevant to the chat history."
-
     fallback_model_order = [
+        {
+            "provider": "groq", 
+            "model": "llama3.1-70b"
+        }, 
         {
             "provider": "openai", 
             "model": "4o-mini"
         },
         {
-            "provider": "groq", 
-            "model": "llama3.1-70b"
-        },  
-        {
             "provider": "anthropic", 
             "model": "sonnet"
         }
     ]  
-
+    start_time = time.time()
     revised_question = fallback_text_response(
         prompt=revision_prompt,
         model_order=fallback_model_order,
         history_messages=chat_messages,
         system_instructions=revision_system_instructions,
     )
+    time_taken = time.time() - start_time
+    logger.info(f"Revised question: {revised_question}\nModel: {fallback_model_order[0]['model']}\nRevision time taken: {time_taken:.2f} seconds\n")
+    return revised_question
 
-    logger.info(f"\n\nRevised question: {revised_question}\nModel: {fallback_model_order[0]['model']}\n\n")
-
-    vectordb_question = fallback_text_response(
-        prompt=vectordb_prompt,
-        model_order=fallback_model_order,
-        history_messages=chat_messages,
-        system_instructions=vectordb_system_instructions,
-    )
-    logger.info(f"\n\nVector database question: {vectordb_question}\nModel: {fallback_model_order[0]['model']}\n\n")
-
-    query_embedding = create_openai_embedding(
-        text=vectordb_question, 
-        model_choice="text-embedding-3-large"
-    )
-    similar_chunks = cosine_similarity_search(
-        table_name=table_name, 
-        query_embedding=query_embedding,
-    )
-
-    return single_question(question=revised_question, similar_chunks=similar_chunks)
-    
 
 if __name__ == "__main__":
     import json

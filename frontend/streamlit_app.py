@@ -18,7 +18,38 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def call_backend_api(
+def get_chunks_api(
+    backend_url: str,
+    prompt: str,
+    chat_state: list[dict],
+    table_name: str
+) -> list[dict]:
+    full_url = f"{backend_url}/get_chunks"
+    
+    payload = {
+        "question": prompt,
+        "chat_state": chat_state,
+        "table_name": table_name
+    }
+
+    logger.info(f"Sending request to backend: {full_url}\nPayload: {json.dumps(payload, indent=2)}")
+    
+    try:
+        response = _make_authorized_request(
+            backend_url=backend_url,
+            url=full_url,
+            method='POST',
+            json=payload
+        )
+        
+        response.raise_for_status()
+        return response.json()
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request failed: {str(e)}")
+        raise
+
+def ask_question_api(
     backend_url: str,
     prompt: str,
     chat_state: list[dict],
@@ -82,6 +113,17 @@ def _get_id_token(
     id_token_credentials = id_token.fetch_id_token(auth_req, audience)
     return id_token_credentials
 
+def display_chunks(chunks: list[dict]) -> None:
+    st.subheader("Retrieved Chunks")
+    for i, chunk in enumerate(chunks, 1):
+        st.markdown(f"**Chunk {i}**")
+        st.markdown(f"Title: {_clean_text(chunk['title'])}")
+        st.markdown(f"Text: {_clean_text(chunk['text'])}")
+        st.markdown(f"Similarity: {chunk['similarity']:.4f}")
+        st.markdown(f"Start Time: {chunk['start_mins']} minutes")
+        st.markdown(f"[Watch on YouTube]({chunk['youtube_link']})")
+        st.markdown("---")
+
 def display_messages(
     messages: list[dict]
 ) -> None:
@@ -120,8 +162,6 @@ def handle_new_message(
     backend_url: str,
     table_name: str
 ) -> None:
-    # Add user message to chat history
-    st.session_state['messages'].append({"role": "user", "content": prompt})
     
     # Display user message
     with st.chat_message("user"):
@@ -135,7 +175,19 @@ def handle_new_message(
             full_response = ""
 
         try:
-            for token in call_backend_api(
+            # Retrieve chunks
+            chunks = get_chunks_api(
+                backend_url=backend_url,
+                prompt=prompt,
+                chat_state=st.session_state['messages'],
+                table_name=table_name
+            )
+            
+            # Display chunks in a collapsible section
+            with st.expander("View Retrieved Chunks", expanded=False):
+                display_chunks(chunks)
+
+            for token in ask_question_api(
                 backend_url=backend_url,
                 prompt=prompt,
                 chat_state=st.session_state['messages'],
@@ -148,7 +200,8 @@ def handle_new_message(
             # Final update to remove cursor
             message_placeholder.markdown(full_response)
 
-            # Add assistant's message to chat history
+            # Add user and assistant messages to chat history
+            st.session_state['messages'].append({"role": "user", "content": prompt},)
             st.session_state['messages'].append({"role": "assistant", "content": full_response})
 
         except requests.exceptions.RequestException as e:
@@ -159,7 +212,9 @@ def handle_new_message(
 
 
 # Function to handle request exceptions
-def _handle_request_exception(e: requests.exceptions.RequestException) -> None:
+def _handle_request_exception(
+    e: requests.exceptions.RequestException
+) -> None:
     error_message = f"An error occurred: {str(e)}"
     if hasattr(e, 'response'):
         try:
@@ -175,25 +230,25 @@ def _handle_request_exception(e: requests.exceptions.RequestException) -> None:
     st.error(error_message)
     logger.error(error_message, exc_info=True)
 
+#####################################
+##### END OF HELPER FUNCTIONS #######
+#####################################
+
 TABLE_NAME = os.getenv("TABLE_NAME")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
  
 st.title("MFM Chat")
 
-# Initialize chat history
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "Hello! I have access to transcripts of the My First Million podcast. Ask me some questions."}
     ]
 
-# Display chat messages from history on app rerun
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Accept user input
 if prompt := st.chat_input("What would you like to know?"):
-    # Handle new message
     handle_new_message(
         prompt=prompt,
         backend_url=BACKEND_URL,
