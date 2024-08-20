@@ -9,7 +9,6 @@ app = FastAPI()
 class QuestionRequest(BaseModel):
     question: str
     chat_state: list
-    table_name: str
     similar_chunks: list[dict]
 
 @app.post("/ask_question")
@@ -18,7 +17,6 @@ async def ask_question(request: QuestionRequest):
         response_generator = question_with_chat_state(
             question=request.question,
             chat_state=request.chat_state,
-            table_name=request.table_name,
             similar_chunks=request.similar_chunks
         )
         return StreamingResponse(response_generator, media_type="text/plain")

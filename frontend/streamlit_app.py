@@ -32,7 +32,7 @@ def retrieve_chunks_api(
         "table_name": table_name
     }
 
-    logger.info(f"Sending request to backend: {full_url}\nPayload: {json.dumps(payload, indent=2)}")
+    logger.info(f"Sending request to backend: {full_url}\nQuestion: {prompt}\n")
     
     try:
         response = _make_authorized_request(
@@ -53,7 +53,6 @@ def ask_question_api(
     backend_url: str,
     prompt: str,
     chat_state: list[dict],
-    table_name: str,
     similar_chunks: list[dict]
 ) -> Generator[str, None, None]:
     full_url = f"{backend_url}/ask_question"
@@ -61,11 +60,10 @@ def ask_question_api(
     payload = {
         "question": prompt,
         "chat_state": chat_state,
-        "table_name": table_name,
         "similar_chunks": similar_chunks
     }
 
-    logger.info(f"Sending request to backend: {full_url}\nPayload: {json.dumps(payload, indent=2)}")
+    logger.info(f"Sending request to backend: {full_url}\nQuestion: {prompt}\nSimilar Chunks Count: {len(similar_chunks)}")
     
     try:
         response = _make_authorized_request(
@@ -116,18 +114,24 @@ def _get_id_token(
     return id_token_credentials
 
 def display_chunks(
-    chunks: list[dict]
 ) -> None:
-    with st.sidebar:
-        for i, chunk in enumerate(chunks, 1):
-            st.markdown(f"# **{i}**")
-            st.markdown(f"""
-            **Episode:** {_clean_text(chunk['title'])}\n
-            **Time of Clip:** [{chunk['start_mins']} minutes]({chunk['youtube_link']})\n
-            """)
-            with st.expander("Transcript", expanded=True):
-                st.markdown(f"{_clean_text(chunk['text'])}")            
-            st.markdown("---")
+    if 'similar_chunks' not in st.session_state:
+        st.session_state['similar_chunks'] = []
+        with st.sidebar:
+            st.write("No similar chunks found.")
+    else:
+        chunks = st.session_state['similar_chunks']
+        with st.sidebar:
+            st.title("Sources")
+            for i, chunk in enumerate(chunks, 1):
+                st.header(f"{i}")
+                st.markdown(f"""
+                **Episode:** {_clean_text(chunk['title'])}\n
+                **Time of Clip:** [{chunk['start_mins']} minutes]({chunk['youtube_link']})\n
+                """)
+                with st.expander("Transcript", expanded=True):
+                    st.markdown(f"{_clean_text(chunk['text'])}")            
+                st.markdown("---")
 
 def display_messages(
     messages: list[dict]
@@ -187,16 +191,14 @@ def handle_new_message(
                 chat_state=st.session_state['messages'],
                 table_name=table_name
             )
-            
-            # Display chunks in a collapsible section
-            with st.expander("View Retrieved Chunks", expanded=False):
-                display_chunks(similar_chunks)
+
+            st.session_state['similar_chunks'] = similar_chunks
+            display_chunks()
 
             for token in ask_question_api(
                 backend_url=backend_url,
                 prompt=prompt,
                 chat_state=st.session_state['messages'],
-                table_name=table_name,
                 similar_chunks=similar_chunks
             ):
                 full_response += _clean_text(token)
@@ -243,7 +245,15 @@ def _handle_request_exception(
 TABLE_NAME = os.getenv("TABLE_NAME")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
  
-st.title("MFM Chat")
+st.set_page_config(
+    page_title="MFM Chat",
+    page_icon=":book:",
+    initial_sidebar_state="expanded"
+)
+
+if 'similar_chunks' not in st.session_state:
+    st.session_state['similar_chunks'] = []
+    display_chunks()
 
 if "messages" not in st.session_state:
     st.session_state.messages = [

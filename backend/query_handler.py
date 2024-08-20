@@ -188,7 +188,6 @@ def stream_question_response(
 
     source_template = "Title: {title} at [{start_mins}]({youtube_link})\nText: {text}"
     template_args = {"title": "title", "text": "text", "start_mins": "start_mins", "youtube_link": "youtube_link"}
-
     fallback_model_order = [
         {
             "provider": "openai", 
@@ -204,8 +203,6 @@ def stream_question_response(
         },
     ]
 
-
-    print(f"\n\nQuestion: {question}\nModel: {fallback_model_order[0]['model']}\n\n")
     return stream_response_with_query(
         similar_chunks=similar_chunks,
         question=question,
@@ -218,28 +215,39 @@ def stream_question_response(
 def question_with_chat_state(
     question: str, 
     chat_state: List[Dict],
-    table_name: str,
     similar_chunks: List[Dict]
 ) -> Generator[str, None, None]:    
 
-    revised_question = _generate_revised_question(chat_state, question)
+    if len(chat_state) > 3:
+        added_context = _generate_context_for_question(chat_state, question)
+        revised_question = f"Question: {question}\n---\nContext:\n{added_context}\n---"
+    else:
+        revised_question = question
 
     return stream_question_response(
         question=revised_question, 
         similar_chunks=similar_chunks
     )
 
-def _generate_revised_question(
+def _generate_context_for_question(
     chat_messages: List[Dict], 
     question: str
 ) -> str:
     revision_prompt = f"""
+        Use Chat History to provide context for the question.
+        ---
         Question: {question}
-        When possible, rewrite the question using <chat history> to identify the intent of the question, the people referenced by the question, and ideas / topics / themes targeted by the question in <chat history>.
-        If the <chat history> does not contain any information about the people, ideas, or topics relevant to the question, then do not make any assumptions.
-        Only return the request. Don't preface it or provide an introductory message.
+        ---
+        ---
+        Chat History:
+        {chat_messages}
+        ---
     """
-    revision_system_instructions = "You are an assistant that concisely and carefully rewrites questions. The less than (<) and greater than (>) signs are telling you to refer to the chat history. Don't use < or > in your response."
+    revision_system_instructions = """
+        You're an expert research assistant.
+        Provide a concise summarization of relevant portions of chat history.
+        Don't preface it or provide an introductory message.
+    """
 
     fallback_model_order = [
         {
@@ -256,15 +264,14 @@ def _generate_revised_question(
         }
     ]  
     start_time = time.time()
-    revised_question = fallback_text_response(
+    added_context = fallback_text_response(
         prompt=revision_prompt,
         model_order=fallback_model_order,
-        history_messages=chat_messages,
         system_instructions=revision_system_instructions,
     )
     time_taken = time.time() - start_time
-    logger.info(f"Revised question: {revised_question}\nModel: {fallback_model_order[0]['model']}\nRevision time taken: {time_taken:.2f} seconds\n")
-    return revised_question
+    logger.info(f"Added Context: {added_context}\nModel: {fallback_model_order[0]['model']}\nRevision time taken: {time_taken:.2f} seconds\n")
+    return added_context
 
 
 if __name__ == "__main__":
