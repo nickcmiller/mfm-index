@@ -18,13 +18,13 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_chunks_api(
+def retrieve_chunks_api(
     backend_url: str,
     prompt: str,
     chat_state: list[dict],
     table_name: str
 ) -> list[dict]:
-    full_url = f"{backend_url}/get_chunks"
+    full_url = f"{backend_url}/retrieve_chunks"
     
     payload = {
         "question": prompt,
@@ -53,14 +53,16 @@ def ask_question_api(
     backend_url: str,
     prompt: str,
     chat_state: list[dict],
-    table_name: str
+    table_name: str,
+    similar_chunks: list[dict]
 ) -> Generator[str, None, None]:
     full_url = f"{backend_url}/ask_question"
     
     payload = {
         "question": prompt,
         "chat_state": chat_state,
-        "table_name": table_name
+        "table_name": table_name,
+        "similar_chunks": similar_chunks
     }
 
     logger.info(f"Sending request to backend: {full_url}\nPayload: {json.dumps(payload, indent=2)}")
@@ -113,16 +115,19 @@ def _get_id_token(
     id_token_credentials = id_token.fetch_id_token(auth_req, audience)
     return id_token_credentials
 
-def display_chunks(chunks: list[dict]) -> None:
-    st.subheader("Retrieved Chunks")
-    for i, chunk in enumerate(chunks, 1):
-        st.markdown(f"**Chunk {i}**")
-        st.markdown(f"Title: {_clean_text(chunk['title'])}")
-        st.markdown(f"Text: {_clean_text(chunk['text'])}")
-        st.markdown(f"Similarity: {chunk['similarity']:.4f}")
-        st.markdown(f"Start Time: {chunk['start_mins']} minutes")
-        st.markdown(f"[Watch on YouTube]({chunk['youtube_link']})")
-        st.markdown("---")
+def display_chunks(
+    chunks: list[dict]
+) -> None:
+    with st.sidebar:
+        for i, chunk in enumerate(chunks, 1):
+            st.markdown(f"# **{i}**")
+            st.markdown(f"""
+            **Episode:** {_clean_text(chunk['title'])}\n
+            **Time of Clip:** [{chunk['start_mins']} minutes]({chunk['youtube_link']})\n
+            """)
+            with st.expander("Transcript", expanded=True):
+                st.markdown(f"{_clean_text(chunk['text'])}")            
+            st.markdown("---")
 
 def display_messages(
     messages: list[dict]
@@ -175,8 +180,8 @@ def handle_new_message(
             full_response = ""
 
         try:
-            # Retrieve chunks
-            chunks = get_chunks_api(
+            # Retrieve similar chunks
+            similar_chunks = retrieve_chunks_api(
                 backend_url=backend_url,
                 prompt=prompt,
                 chat_state=st.session_state['messages'],
@@ -185,13 +190,14 @@ def handle_new_message(
             
             # Display chunks in a collapsible section
             with st.expander("View Retrieved Chunks", expanded=False):
-                display_chunks(chunks)
+                display_chunks(similar_chunks)
 
             for token in ask_question_api(
                 backend_url=backend_url,
                 prompt=prompt,
                 chat_state=st.session_state['messages'],
-                table_name=table_name
+                table_name=table_name,
+                similar_chunks=similar_chunks
             ):
                 full_response += _clean_text(token)
                 # Use markdown to display the streaming response

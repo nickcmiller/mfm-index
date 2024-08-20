@@ -10,6 +10,7 @@ class QuestionRequest(BaseModel):
     question: str
     chat_state: list
     table_name: str
+    similar_chunks: list[dict]
 
 @app.post("/ask_question")
 async def ask_question(request: QuestionRequest):
@@ -17,7 +18,8 @@ async def ask_question(request: QuestionRequest):
         response_generator = question_with_chat_state(
             question=request.question,
             chat_state=request.chat_state,
-            table_name=request.table_name
+            table_name=request.table_name,
+            similar_chunks=request.similar_chunks
         )
         return StreamingResponse(response_generator, media_type="text/plain")
     except Exception as e:
@@ -28,15 +30,17 @@ class ChunksRequest(BaseModel):
     chat_state: list = []
     table_name: str
 
-@app.post("/get_chunks")
-async def get_chunks(request: ChunksRequest):
+@app.post("/retrieve_chunks")
+async def retrieve_chunks_endpoint(request: ChunksRequest):
     try:
-        chunks = retrieve_similar_chunks(
+        similar_chunks = retrieve_similar_chunks(
             table_name=request.table_name,
             question=request.question,
             chat_messages=request.chat_state
         )
-        return chunks
+        return similar_chunks
+    except TypeError as e:
+        raise HTTPException(status_code=500, detail=f"TypeError: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

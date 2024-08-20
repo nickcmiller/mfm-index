@@ -101,8 +101,8 @@ def retrieve_similar_chunks(
         filtered_rows = filtered_rows[:filter_limit]
         logger.info(f"Filtered down to {len(filtered_rows)} rows within {max_similarity_delta} of the highest similarity score: {max_similarity}")
 
-        for row in filtered_rows:
-            logger.info(f"Similarity: {row['similarity']} - {row['title']} {row['start_mins']}")
+        # for row in filtered_rows:
+        #     logger.info(f"Similarity: {row['similarity']} - {row['title']} {row['start_mins']}")
     except Exception as e:
         logger.error(f"Failed to perform cosine similarity search: {e}", exc_info=True)
         raise
@@ -218,14 +218,9 @@ def stream_question_response(
 def question_with_chat_state(
     question: str, 
     chat_state: List[Dict],
-    table_name: str
+    table_name: str,
+    similar_chunks: List[Dict]
 ) -> Generator[str, None, None]:    
-
-    similar_chunks = retrieve_similar_chunks(
-        table_name=table_name, 
-        question=question,
-        chat_messages=chat_state
-    )
 
     revised_question = _generate_revised_question(chat_state, question)
 
