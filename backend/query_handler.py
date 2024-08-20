@@ -154,18 +154,13 @@ def stream_question_response(
 ) -> Generator[str, None, None]:
 
     llm_system_prompt = """
-    Use numbered references to cite sources with their titles.
-    Record each reference in a markdown numbered list at the bottom with a timestamp and a link to the source.
+    Use numbered references to cite sources provided to you.
+    Record each reference with a bracketed number(i.e. [1], [2], [3], etc.)
     When a timestamp is reused, use the same number.
 
     Example 1: 
     '''
     Sentence using first source.[1] Sentence using second and third sources.[2][3]
-
-   **References:**
-    1. Source 1 Title at [0:32](https://youtube.com/watch?v=dQw4w9WgXcQ&t=32)
-    2. Source 2 Title at [8:47](https://youtube.com/watch?v=oHg5SJYRHA0&t=527)
-    3. Source 3 Title at [13:36](https://youtube.com/watch?v=xvFZjo5PgG0&t=816)
     '''
 
     Example 2: 
@@ -174,11 +169,6 @@ def stream_question_response(
     - Sentence using first source.[1]
     - Sentence using second and third sources.[2][3]
     - Sentence using first and third sources.[1][3]
-
-   **References:**
-    1. Source 1 Title at [0:32](https://youtube.com/watch?v=dQw4w9WgXcQ&t=32)
-    2. Source 2 Title at [8:47](https://youtube.com/watch?v=oHg5SJYRHA0&t=527)
-    3. Source 3 Title at [13:36](https://youtube.com/watch?v=xvFZjo5PgG0&t=816)
     '''
 
     Provide a thorough, detailed, and comprehensive answer.
@@ -223,7 +213,8 @@ def question_with_chat_state(
         revised_question = f"Question: {question}\n---\nContext:\n{added_context}\n---"
     else:
         revised_question = question
-
+    
+    logger.info(f"\n\nRevised question:\n {revised_question}\n")
     return stream_question_response(
         question=revised_question, 
         similar_chunks=similar_chunks
