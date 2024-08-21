@@ -211,8 +211,8 @@ def retrieve_entries_by_id(
 
 def filter_index_by_date_range(
     index_list: List[Dict[str, Any]], 
-    start_datetime: datetime, 
-    end_datetime: datetime, 
+    start_date: str, 
+    end_date: str, 
     timezone_str: str,
     date_field: str = 'published'
 ) -> List[Dict[str, Any]]:
@@ -221,14 +221,22 @@ def filter_index_by_date_range(
 
     Args:
         index_list (List[Dict[str, Any]]): List of entries to filter
-        start_datetime (datetime): Start of the date range
-        end_datetime (datetime): End of the date range
+        start_date (str): Start of the date range
+        end_date (str): End of the date range
         timezone_str (str): Timezone for the date range
         date_field (str): The field to use for the date (default is 'published')
 
     Returns:
         List[Dict[str, Any]]: Filtered and sorted list of entries within the date range
     """
+    # Convert start and end dates to timezone-aware datetime objects
+    try:
+        start_datetime = get_date_with_timezone(start_date, timezone_str)
+        end_datetime = get_date_with_timezone(end_date, timezone_str)
+    except Exception as e:
+        logging.error(f"Error converting dates: {e}")
+        return []
+
     filtered_index = []
     for entry in index_list:
         published_date = get_date_with_timezone(entry[date_field], timezone_str)
@@ -257,13 +265,6 @@ def retrieve_entries_by_date_range(
     Returns:
         List[Dict[str, Any]]: List of retrieved full entries within the date range
     """
-    # Convert start and end dates to timezone-aware datetime objects
-    try:
-        start_datetime = get_date_with_timezone(start_date, timezone_str)
-        end_datetime = get_date_with_timezone(end_date, timezone_str)
-    except Exception as e:
-        logging.error(f"Error converting dates: {e}")
-        return []
 
     # Retrieve the index as a list
     index_list = retrieve_index_list_from_gcs(bucket_name, "index.json")
@@ -272,7 +273,13 @@ def retrieve_entries_by_date_range(
         return []
 
     # Filter the index list based on the date range
-    filtered_index = filter_index_by_date_range(index_list, start_datetime, end_datetime, timezone_str, date_field)
+    filtered_index = filter_index_by_date_range(
+        index_list=index_list,
+        start_date=start_date,
+        end_date=end_date,
+        timezone_str=timezone_str,
+        date_field=date_field
+    )
 
     # Retrieve full entries
     full_entries = []
@@ -291,6 +298,24 @@ if __name__ == "__main__":
     from genai_toolbox.helper_functions.string_helpers import retrieve_file, write_to_file
     import json
 
+    index_list = retrieve_index_list_from_gcs(
+        bucket_name="aai_utterances_json",
+        file_path="index.json"
+    )
+    filtered_index = filter_index_by_date_range(
+        index_list=index_list,
+        start_date="2024-02-1",
+        end_date="2024-09-1",
+        timezone_str="UTC"
+    )
+    print(filtered_index)
+    for entry in filtered_index:
+        print(f"{entry['published']} - {entry['title']} - {entry['video_id']}")
+
+    
+
+
+
     # index_list = retrieve_index_list_from_gcs(
     #     bucket_name="aai_utterances_json",
     #     file_path="index.json"
@@ -302,27 +327,27 @@ if __name__ == "__main__":
     #     timezone_str='UTC'
     # )
     # print(json.dumps(filtered_index, indent=4))
-    entries = retrieve_entries_by_date_range(
-        bucket_name="aai_utterances_json",
-        start_date="2024-02-1",
-        end_date="2024-06-1"
-    )
-    print(f"Retrieved {len(entries)} entries from GCS")
-    output_file_path = "tmp/speaker_replaced_utterances.json"
-    with open(output_file_path, 'w') as output_file:
-        json.dump(entries, output_file, indent=4)
-    print(f"Successfully wrote {len(entries)} entries to {output_file_path}")
+    # entries = retrieve_entries_by_date_range(
+    #     bucket_name="aai_utterances_json",
+    #     start_date="2024-02-1",
+    #     end_date="2024-09-1"
+    # )
+    # print(f"Retrieved {len(entries)} entries from GCS")
+    # output_file_path = "tmp/speaker_replaced_utterances.json"
+    # with open(output_file_path, 'w') as output_file:
+    #     json.dump(entries, output_file, indent=4)
+    # print(f"Successfully wrote {len(entries)} entries to {output_file_path}")
     # Convert entries to include parsed dates for sorting
 
-    entries_with_dates = [
-        (parser.isoparse(entry['published']), entry) for entry in entries
-    ]
-    print(entries[0].keys())
-    for _, entry in entries_with_dates:
-        published_date = parser.isoparse(entry['published'])  # Corrected method name
-        day_with_suffix = f"{published_date.day}{'th' if 11 <= published_date.day <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(published_date.day % 10, 'th')}"
-        formatted_date = f"{published_date.strftime('%B')} {day_with_suffix}, {published_date.year}"
-        print(f"{formatted_date} - {entry['title']}")
+    # entries_with_dates = [
+    #     (parser.isoparse(entry['published']), entry) for entry in entries
+    # ]
+    # print(entries[0].keys())
+    # for _, entry in entries_with_dates:
+    #     published_date = parser.isoparse(entry['published'])  # Corrected method name
+    #     day_with_suffix = f"{published_date.day}{'th' if 11 <= published_date.day <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(published_date.day % 10, 'th')}"
+    #     formatted_date = f"{published_date.strftime('%B')} {day_with_suffix}, {published_date.year}"
+    #     print(f"{formatted_date} - {entry['title']}")
 
 
     

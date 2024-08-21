@@ -5,7 +5,7 @@ CONFIG = {
     'process_new_episodes': False,
     'speaker_replacement': False,
     'generate_embeddings': True,
-    'write_to_table': False
+    'write_to_table': True
 }
 
 YOUTUBE_CONFIG = {
