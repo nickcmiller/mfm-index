@@ -62,5 +62,3 @@ async def process_utterances(config):
 
 def replace_speakers(config):
     return asyncio.run(process_utterances(config))
-
-if __name__ == "__main__":

@@ -239,7 +239,6 @@ def _generate_context_for_question(
         Provide a concise summarization of relevant portions of chat history.
         Don't preface it or provide an introductory message.
     """
-
     fallback_model_order = [
         {
             "provider": "groq", 
@@ -263,7 +262,6 @@ def _generate_context_for_question(
     time_taken = time.time() - start_time
     logger.info(f"Added Context: {added_context}\nModel: {fallback_model_order[0]['model']}\nRevision time taken: {time_taken:.2f} seconds\n")
     return added_context
-
 
 if __name__ == "__main__":
     import json

@@ -12,6 +12,8 @@ from genai_toolbox.chunk_and_embed.chunking_functions import (
 from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
 from genai_toolbox.helper_functions.datetime_helpers import convert_date_format
 
+from transcript_summary import summarize_transcript, convert_summary_to_utterance
+
 import logging
 from typing import List, Dict
 import re
@@ -107,18 +109,40 @@ async def process_entry(
         tasks, ensuring modularity and reusability of code.
     """
     
+    video_id = entry['video_id']
     feed_title = entry['feed_title']
     episode_title = entry['title']
+    feed_regex = re.sub(r'[^a-zA-Z0-9\s]', '', feed_title)
+    episode_regex = re.sub(r'[^a-zA-Z0-9\s]', '', episode_title)
     episode_date = convert_date_format(entry['published'])
+    
     utterances = entry['replaced_dict']['transcribed_utterances']
 
-    video_id = None
-    if 'video_id' in entry:
-        video_id = entry['video_id']
-    
     async def update_stage(stage_name):
         if pbar:
             pbar.set_postfix({"stage": stage_name}, refresh=True)
+
+    await update_stage("Generating summary")
+    transcript = entry['replaced_dict']['transcript']
+    summary = summarize_transcript(transcript)
+    summary_utterance = convert_summary_to_utterance(
+        summary,
+        video_id,
+        episode_title,
+        feed_title,
+        feed_regex,
+        episode_regex,
+        episode_date
+    )
+
+    await update_stage("Embedding summary")
+    summary_embedding = await embed_dict_list_async(
+        embedding_function=create_openai_embedding,
+        chunk_dicts=[summary_utterance], 
+        key_to_embed="text",
+        model_choice="text-embedding-3-large",
+        rate_limit=per_worker_rate_limit
+    )
 
     await update_stage("Converting speakers")
     speakermod_utterances = convert_utterance_speaker_to_speakers(utterances)
@@ -179,9 +203,10 @@ async def process_entry(
     await update_stage("Generating IDs")
     for utterance in consolidated_embeddings:
         start = utterance['start_ms']
-        feed_regex = re.sub(r'[^a-zA-Z0-9\s]', '', feed_title)
-        episode_regex = re.sub(r'[^a-zA-Z0-9\s]', '', episode_title)
         utterance['id'] = f"{start} {feed_regex} {episode_regex}".replace(' ', '-')
+
+    await update_stage("Adding summary embedding")
+    consolidated_embeddings.append(summary_embedding[0])
     
     await update_stage("Completed")
     return consolidated_embeddings

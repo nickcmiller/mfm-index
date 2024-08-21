@@ -83,11 +83,34 @@ def summarize_transcript(
         concatenation_delimiter=f"\n{'-'*3}\nTranscript:\n{'-'*3}\n",
     )
 
-    for k, v in summary['revision_dict'].items():
-        if k!='Original':
-            print(f"{'-'*3}\n{k}\n{'-'*3}\n{v}\n{'*'*3}\n")
-
     return summary['modified_string']
+
+def convert_summary_to_utterance(
+    summary: str,
+    video_id: str,
+    episode_title: str,
+    feed_title: str,
+    feed_regex: str,
+    episode_regex: str,
+    episode_date: str
+) -> str:
+
+    summary_id = f"summary {feed_regex} {episode_regex} ".replace(' ', '-')
+    youtube_link = f"https://www.youtube.com/watch?v={video_id}"
+    
+    return {
+        "speakers": ["AI Generated Summary"],
+        "text": summary,
+        "start_mins": "0:00",
+        "end_mins": "0:00",
+        "start_ms": 0,
+        "end_ms": 0,
+        "title": episode_title,
+        "publisher": feed_title,
+        "date_published": episode_date,
+        "youtube_link": youtube_link,
+        "id": summary_id
+    }
 
 if __name__ == "__main__":
     from genai_toolbox.helper_functions.string_helpers import retrieve_file

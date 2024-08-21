@@ -125,12 +125,15 @@ def display_chunks(
             st.title("Sources")
             for i, chunk in enumerate(chunks, 1):
                 st.header(f"{i}")
-                st.markdown(f"""
-                **Episode:** {_clean_text(chunk['title'])}\n
-                **Time of Clip:** [{chunk['start_mins']} minutes]({chunk['youtube_link']})\n
-                """)
-                with st.expander("Transcript", expanded=True):
-                    st.markdown(f"{_clean_text(chunk['text'])}")            
+                st.markdown(f"**Episode:** {chunk['title']}\n")
+                if chunk['id'].startswith('summary'):
+                    st.markdown(f"**YouTube Link:** [{chunk['title']}]({chunk['youtube_link']})\n")
+                    with st.expander("AI Generated Summary", expanded=False):
+                        st.markdown(f"{chunk['text']}") 
+                else:
+                    st.markdown(f"**Time of Clip:** [{chunk['start_mins']} minutes]({chunk['youtube_link']})\n")
+                    with st.expander("Clip Transcript", expanded=True):
+                        st.markdown(f"{_clean_text(chunk['text'])}")            
                 st.markdown("---")
 
 def display_messages(
