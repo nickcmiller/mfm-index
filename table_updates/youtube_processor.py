@@ -86,7 +86,7 @@ async def process_stages(
             audio_dir_name
         ),
         (
-            "Summary generation", 
+            "Speaker summary", 
             generate_episode_summary, 
             entry['title'], 
             entry['description'], 

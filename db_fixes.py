@@ -8,6 +8,21 @@ from typing import List, Dict
 def replace_episode_speakers(
         entries: List[Dict]
 ) -> List[Dict]:
+    """
+        Replaces speakers in the provided episode entries.
+
+        This function takes a list of episode entries, each containing a dictionary of utterances,
+        and processes them to replace speaker labels based on the generated summary of the episode.
+        It utilizes the `replace_speakers_in_assemblyai_utterances` function to perform the replacement
+        and generates a summary using the `generate_episode_summary` function.
+
+        Args:
+            entries (List[Dict]): A list of dictionaries where each dictionary represents an episode entry
+                                containing metadata and utterances.
+
+        Returns:
+            List[Dict]: A list of dictionaries with updated speaker labels and generated summaries.
+    """
     fixed_entries = []
     for entry in entries:
         new_entry = deepcopy(entry)
@@ -49,10 +64,12 @@ def main():
         video_ids=ids_to_fix
     )
 
-    fixed_entries = replace_episode_speakers(entries)
+    print(entries[0].keys())
 
-    with open("tmp/speaker_replaced_utterances.json", "w") as f:
-        json.dump(fixed_entries, f, indent=4)
+    # fixed_entries = replace_episode_speakers(entries)
+
+    # with open("tmp/speaker_replaced_utterances.json", "w") as f:
+    #     json.dump(fixed_entries, f, indent=4)
 
 if __name__ == "__main__":
     main()
