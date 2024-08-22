@@ -125,9 +125,9 @@ def display_chunks(
             st.title("Sources")
             for i, chunk in enumerate(chunks, 1):
                 st.header(f"{i}")
-                st.markdown(f"**Episode:** {chunk['title']}\n")
+                st.markdown(f"**Episode:** {_clean_text(chunk['title'])}\n")
                 if chunk['id'].startswith('summary'):
-                    st.markdown(f"**YouTube Link:** [{chunk['title']}]({chunk['youtube_link']})\n")
+                    st.markdown(f"**YouTube Link:** [{_clean_text(chunk['title'])}]({chunk['youtube_link']})\n")
                     with st.expander("AI Generated Summary", expanded=False):
                         st.markdown(f"{chunk['text']}") 
                 else:

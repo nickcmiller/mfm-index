@@ -69,8 +69,8 @@ def entries_main():
 
     entries = retrieve_entries_by_date_range(
         bucket_name=BUCKET_NAME,
-        start_date="2024-06-1",
-        end_date="2024-07-1"
+        start_date="2024-02-1",
+        end_date="2024-05-1"
     )
 
     return entries
