@@ -36,10 +36,14 @@ async def retrieve_chunks_endpoint(request: ChunksRequest):
             question=request.question,
             chat_messages=request.chat_state
         )
-        return similar_chunks
-    except TypeError as e:
-        raise HTTPException(status_code=500, detail=f"TypeError: {str(e)}")
+        if not similar_chunks:
+            return {"message": "No relevant chunks found", "chunks": []}
+        return {"chunks": similar_chunks}
+    except ValueError as e:
+        logger.error(f"ValueError in retrieve_chunks_endpoint: {str(e)}")
+        return {"message": "No relevant chunks found", "chunks": []}
     except Exception as e:
+        logger.error(f"Unexpected error in retrieve_chunks_endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

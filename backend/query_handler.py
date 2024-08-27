@@ -72,7 +72,7 @@ def retrieve_similar_chunks(
     table_name: str, 
     question: str,
     chat_messages: List[Dict] = [],
-    filter_limit=10,
+    filter_limit=20,
     max_similarity_delta=0.075,
 ) -> List[Dict]:
     try:
@@ -95,6 +95,10 @@ def retrieve_similar_chunks(
             table_name=table_name, 
             query_embedding=query_embedding,
         )
+
+        if not similar_rows:
+            logger.info("No similar chunks found")
+            return []
 
         max_similarity = max(row['similarity'] for row in similar_rows)
         filtered_rows = [row for row in similar_rows if max_similarity - row['similarity'] <= max_similarity_delta]

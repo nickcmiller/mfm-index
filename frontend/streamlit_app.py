@@ -43,10 +43,25 @@ def retrieve_chunks_api(
         )
         
         response.raise_for_status()
-        return response.json()
+        response_data = response.json()
+        
+        if isinstance(response_data, dict):
+            if "message" in response_data and response_data["message"] == "No relevant chunks found":
+                logger.info("No relevant chunks found")
+                return []
+            return response_data.get("chunks", [])
+        elif isinstance(response_data, list):
+            return response_data
+        else:
+            logger.error(f"Unexpected response format: {response_data}")
+            return []
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Request failed: {str(e)}")
+        if hasattr(e, 'response') and e.response is not None:
+            if e.response.status_code == 500:
+                logger.error(f"Server error: {e.response.text}")
+                return []
         raise
 
 def ask_question_api(
