@@ -265,7 +265,7 @@ def load_existing_dicts(
     """
     try:
         return retrieve_file(
-            file=embedding_config['existing_embeddings_file'], 
+            file_name=embedding_config['existing_embeddings_file'],
             dir_name=embedding_config['existing_embeddings_dir']
         )
     except FileNotFoundError:
@@ -302,7 +302,7 @@ async def generate_embeddings_async(
         to limit the number of concurrent tasks and a progress bar to track the processing status.
     """
     feed_dict = retrieve_file(
-        file=embedding_config['input_file'],
+        file_name=embedding_config['input_file'],
         dir_name=embedding_config['input_dir']
     )
 
@@ -328,8 +328,8 @@ async def generate_embeddings_async(
     # Add these lines to write the results to a file
     write_to_file(
         content=chunked_dicts,
-        file=embedding_config['output_file_name'],
-        output_dir_name=embedding_config['output_dir_name']
+        file_name=embedding_config['output_file_name'],
+        dir_name=embedding_config['output_dir_name']
     )
 
     return chunked_dicts

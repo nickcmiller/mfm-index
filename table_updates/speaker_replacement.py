@@ -9,7 +9,7 @@ import asyncio
 
 async def process_utterances(config):
     utterances_data = retrieve_file(
-        file=config['input_file'],
+        file_name=config['input_file'],
         dir_name=config['input_dir']
     )
     
@@ -44,8 +44,8 @@ async def process_utterances(config):
         await asyncio.to_thread(
             write_to_file,
             content=successful_entries,
-            file=config['output_file_name'],
-            output_dir_name=config['output_dir_name']
+            file_name=config['output_file_name'],
+            dir_name=config['output_dir_name']
         )
         logging.info(f"Successfully written {len(successful_entries)} entries to {config['output_file_name']}")
     else:

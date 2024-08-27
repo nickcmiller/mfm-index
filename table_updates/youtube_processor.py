@@ -208,8 +208,8 @@ def process_youtube_feed(
         if new_episodes:
             write_to_file(
                 content=new_episodes, 
-                file=youtube_config['output_file_name'], 
-                output_dir_name=youtube_config['output_dir_name']
+                file_name=youtube_config['output_file_name'], 
+                dir_name=youtube_config['output_dir_name']
             )
         else:
             logging.warning("No valid episodes to write to file")

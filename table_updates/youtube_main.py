@@ -43,7 +43,7 @@ def main():
     if CONFIG['write_to_table']:
         logging.info(f"\n{'_'*50}\nWRITING TO TABLE\n{'_'*50}")
         list_of_objects = retrieve_file(
-            file=TABLE_CONFIG['input_file_name'], 
+            file_name=TABLE_CONFIG['input_file_name'], 
             dir_name=TABLE_CONFIG['input_dir_name']
         )
 

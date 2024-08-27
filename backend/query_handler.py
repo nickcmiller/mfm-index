@@ -260,7 +260,7 @@ def _generate_context_for_question(
         system_instructions=revision_system_instructions,
     )
     time_taken = time.time() - start_time
-    logger.info(f"Added Context: {added_context}\nModel: {fallback_model_order[0]['model']}\nRevision time taken: {time_taken:.2f} seconds\n")
+    logger.info(f"Generated Context: {added_context}\nModel: {fallback_model_order[0]['model']}\nRevision time taken: {time_taken:.2f} seconds\n")
     return added_context
 
 if __name__ == "__main__":

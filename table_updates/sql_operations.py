@@ -136,23 +136,23 @@ def cosine_similarity_search(
     config=config
 ) -> List[Dict[str, Any]]:
     """
-    Perform a cosine similarity search on the specified table.
+        Perform a cosine similarity search on the specified table.
 
-    This function connects to the database and performs a cosine similarity search
-    using the provided query embedding. It returns the most similar rows based on
-    the cosine similarity between the query embedding and the stored embeddings.
+        This function connects to the database and performs a cosine similarity search
+        using the provided query embedding. It returns the most similar rows based on
+        the cosine similarity between the query embedding and the stored embeddings.
 
-    Args:
-        config (dict): A dictionary containing the database configuration parameters.
-        table_name (str): The name of the table to search in.
-        query_embedding (list): The query embedding to compare against.
-        limit (int): The maximum number of similar rows to return.
+        Args:
+            config (dict): A dictionary containing the database configuration parameters.
+            table_name (str): The name of the table to search in.
+            query_embedding (list): The query embedding to compare against.
+            limit (int): The maximum number of similar rows to return.
 
-    Returns:
-        list: A list of dictionaries containing the most similar rows and their similarity scores.
+        Returns:
+            list: A list of dictionaries containing the most similar rows and their similarity scores.
 
-    Raises:
-        Exception: If there's an error during the database search operation.
+        Raises:
+            Exception: If there's an error during the database search operation.
     """
     with get_db_engine(config) as engine:
         try:
@@ -243,7 +243,7 @@ def load_and_process_data(
             list: A list containing the first 6 items from the loaded and processed data.
     """
     aggregated_chunked_embeddings = retrieve_file(
-        file=file_name,
+        file_name=file_name,
         dir_name=dir_name
     )
     
@@ -315,7 +315,6 @@ def delete_json_results(
         ids, 
         config=config
     )
-
 
 def main(
     operation, 

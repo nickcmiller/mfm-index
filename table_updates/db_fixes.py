@@ -1,6 +1,6 @@
 from genai_toolbox.transcription.assemblyai_functions import replace_speakers_in_assemblyai_utterances, generate_assemblyai_transcript_with_speakers, identify_speakers
 from genai_toolbox.download_sources.youtube_functions import generate_episode_summary
-from genai_toolbox.helper_functions.string_helpers import write_to_file
+from genai_toolbox.helper_functions.string_helpers import write_to_file, retrieve_file
 from gcs_functions import retrieve_entries_by_date_range, retrieve_entries_by_id, filter_index_by_date_range, retrieve_index_list_from_gcs, process_and_upload_entries
 import json
 from copy import deepcopy
@@ -60,33 +60,42 @@ def replace_episode_speakers(
 
 def entries_main():
     #Make sure the booleans in youtube_config.py are set correctly
-    # ids_to_fix = ["X0BCxa3V67M"]
+    ids_to_fix = ["-9RVriDcAgc"]
     
-    # entries = retrieve_entries_by_id(
-    #     bucket_name="aai_utterances_json",
-    #     video_ids=ids_to_fix
+    entries = retrieve_entries_by_id(
+        bucket_name="aai_utterances_json",
+        video_ids=ids_to_fix
+    )
+
+    # entries = retrieve_entries_by_date_range(
+    #     bucket_name=BUCKET_NAME,
+    #     start_date="2024-02-1",
+    #     end_date="2024-05-1"
     # )
 
-    entries = retrieve_entries_by_date_range(
-        bucket_name=BUCKET_NAME,
-        start_date="2024-02-1",
-        end_date="2024-05-1"
-    )
+    # entries = retrieve_file(
+    #     file_name="speaker_replaced_utterances.json",
+    #     dir_name="tmp"
+    # )
 
     return entries
 if __name__ == "__main__":
     import time
     import json
 
+    from dotenv import load_dotenv
+    load_dotenv()
+
     start_time = time.time()
     entries = entries_main()
-    print(len(entries))
-    print(f"Time taken: {time.time() - start_time} seconds")
-
+    print(f"Number of entries: {len(entries)}")
     print(f"Entries keys: {sorted(entries[0].keys())}\nLength: {len(entries[0].keys())}")
 
+    replaced_entries = replace_episode_speakers(entries)
+    print(f"Time taken: {time.time() - start_time} seconds")
+
     write_to_file(
-        content=entries,
-        file="speaker_replaced_utterances.json",
-        output_dir_name="tmp"
+        content=replaced_entries,
+        file_name="speaker_replaced_utterances.json",
+        dir_name="tmp"
     )
