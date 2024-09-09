@@ -1,8 +1,10 @@
+import os
+import logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from query_handler import question_with_chat_state, retrieve_similar_chunks
-import os
 
 app = FastAPI()
 
@@ -29,22 +31,39 @@ class ChunksRequest(BaseModel):
     table_name: str
 
 @app.post("/retrieve_chunks")
-async def retrieve_chunks_endpoint(request: ChunksRequest):
+async def retrieve_chunks_endpoint(
+    request: ChunksRequest
+) -> dict:
+    
+    """
+    Retrieves chunks similar to the given question.
+
+    Args:
+        request (ChunksRequest): Request with the question and the chat state.
+
+    Returns:
+        dict: A dictionary with a key "chunks" containing the similar chunks.
+
+    Raises:
+        HTTPException: If there is an error while retrieving the chunks, it raises
+            an HTTPException with status code 500 and the error message as detail.
+    """
     try:
         similar_chunks = retrieve_similar_chunks(
             table_name=request.table_name,
             question=request.question,
             chat_messages=request.chat_state
         )
-        if not similar_chunks:
-            return {"message": "No relevant chunks found", "chunks": []}
-        return {"chunks": similar_chunks}
-    except ValueError as e:
-        logger.error(f"ValueError in retrieve_chunks_endpoint: {str(e)}")
-        return {"message": "No relevant chunks found", "chunks": []}
+        return {
+            "chunks": similar_chunks
+        }
     except Exception as e:
-        logger.error(f"Unexpected error in retrieve_chunks_endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Error in retrieve_chunks_endpoint: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=str(e)
+        )
+    
 
 if __name__ == "__main__":
     import uvicorn
