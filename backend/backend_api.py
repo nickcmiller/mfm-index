@@ -14,7 +14,18 @@ class QuestionRequest(BaseModel):
     similar_chunks: list[dict]
 
 @app.post("/ask_question")
-async def ask_question(request: QuestionRequest):
+async def ask_question(
+    request: QuestionRequest
+) -> StreamingResponse:
+    """
+        Returns a streaming response with the answer to the question.
+        
+        Args:
+        - request: A QuestionRequest object containing the question, chat state, and similar chunks.
+        
+        Returns:
+        A StreamingResponse object with the answer to the question.
+    """
     try:
         response_generator = question_with_chat_state(
             question=request.question,
@@ -34,19 +45,18 @@ class ChunksRequest(BaseModel):
 async def retrieve_chunks_endpoint(
     request: ChunksRequest
 ) -> dict:
-    
     """
-    Retrieves chunks similar to the given question.
+        Retrieves chunks similar to the given question.
 
-    Args:
-        request (ChunksRequest): Request with the question and the chat state.
+        Args:
+            request (ChunksRequest): Request with the question and the chat state.
 
-    Returns:
-        dict: A dictionary with a key "chunks" containing the similar chunks.
+        Returns:
+            dict: A dictionary with a key "chunks" containing the similar chunks.
 
-    Raises:
-        HTTPException: If there is an error while retrieving the chunks, it raises
-            an HTTPException with status code 500 and the error message as detail.
+        Raises:
+            HTTPException: If there is an error while retrieving the chunks, it raises
+                an HTTPException with status code 500 and the error message as detail.
     """
     try:
         similar_chunks = retrieve_similar_chunks(
